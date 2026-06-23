@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getOnboardingItem } from '@/lib/db';
 import { askSecondBrain } from '@/lib/gemini';
 import { createClient } from '@/lib/supabase/server';
 import { mapChatMessage, mapKnowledgeItem } from '@/lib/supabase/vault';
@@ -51,7 +50,13 @@ export async function POST(req: NextRequest) {
 
     const [{ data: existingChats, error: chatError }, { data: itemRows, error: itemError }] = await Promise.all([
       supabase.from('chat_messages').select('*').eq('user_id', user.id).order('created_at', { ascending: true }),
-      supabase.from('knowledge_items').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
+      supabase
+        .from('knowledge_items')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('processing_status', 'ready')
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false }),
     ]);
 
     if (chatError) {
@@ -62,14 +67,13 @@ export async function POST(req: NextRequest) {
     }
 
     const items = (itemRows ?? []).map((row) => mapKnowledgeItem(row));
-    const effectiveItems = items.length > 0 ? items : [getOnboardingItem()];
 
     const formattedHistory = (existingChats ?? []).map((chat) => ({
       role: chat.role,
       content: chat.content,
     }));
 
-    const aiResponse = await askSecondBrain(query, effectiveItems, formattedHistory);
+    const aiResponse = await askSecondBrain(query, items, formattedHistory);
 
     if (!persist) {
       const createdAt = new Date().toISOString();

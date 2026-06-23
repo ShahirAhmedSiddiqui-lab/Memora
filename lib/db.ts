@@ -5,18 +5,36 @@ export interface Flashcard {
   answer: string;
 }
 
+export type ItemProcessingStatus = 'pending' | 'ready' | 'failed' | 'trashed';
+
+export interface ItemPreviewMetadata {
+  thumbnailUrl?: string;
+  faviconUrl?: string;
+  provider?: string;
+  sourceUrl?: string;
+  fileName?: string;
+  mimeType?: string;
+  byteSize?: number;
+}
+
 export interface KnowledgeItem {
   id: string;
   title: string;
   content: string;
+  extractedText?: string;
   summary: string;
   type: 'Videos' | 'Articles' | 'PDFs' | 'Social Links' | 'Voice Notes';
+  processingStatus: ItemProcessingStatus;
+  failureReason?: string;
   tags: string[];
   createdAt: string;
   createdAtDate: string;
+  updatedAtDate?: string;
+  deletedAt?: string;
   source: string;
   author?: string;
   url?: string;
+  previewMetadata?: ItemPreviewMetadata;
   flashcards: Flashcard[];
   imageUrl?: string;
   readTime?: string;
@@ -87,10 +105,12 @@ export function getOnboardingItem(): KnowledgeItem {
       'Welcome to Aether Vault! Save notes, articles, tweets, video links, PDFs, and voice memos. The app summarizes each item, organizes tags, and lets you ask your vault contextual questions.',
     summary:
       'This starter guide explains the capture flow, file support, summaries, flashcards, and chat-based recall features inside your vault.',
+    processingStatus: 'ready',
     type: 'Articles',
     tags: ['Overview', 'Guide'],
     createdAt: 'Just now',
     createdAtDate,
+    updatedAtDate: createdAtDate,
     source: 'Aether Vault',
     flashcards: [
       {
@@ -110,6 +130,10 @@ export function getOnboardingItem(): KnowledgeItem {
     ],
     imageUrl:
       'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=60',
+    previewMetadata: {
+      thumbnailUrl:
+        'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=60',
+    },
     readTime: '2 min read',
     isSynthesized: true,
     bookmarked: true,

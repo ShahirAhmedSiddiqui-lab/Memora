@@ -39,7 +39,7 @@ export function VaultWorkspace({ identity }: { identity?: VaultIdentity }) {
   const [currentTab, setCurrentTab] = React.useState<VaultTab>('Overview');
   const [items, setItems] = React.useState<KnowledgeItem[]>([]);
   const [chats, setChats] = React.useState<ChatMessage[]>([]);
-  const [selectedItemId, setSelectedItemId] = React.useState<string>('onboarding-manual');
+  const [selectedItemId, setSelectedItemId] = React.useState<string>('');
   const [searchQuery, setSearchQuery] = React.useState('');
   const [chatInput, setChatInput] = React.useState('');
   const [captureUrl, setCaptureUrl] = React.useState('');
@@ -107,48 +107,62 @@ export function VaultWorkspace({ identity }: { identity?: VaultIdentity }) {
     setTimeout(() => setNotification(null), 3000);
   }, []);
 
-  const fetchItems = React.useCallback(async () => {
-    try {
-      const res = await fetch('/api/items');
-      const data = await res.json();
+  React.useEffect(() => {
+    let cancelled = false;
 
-      if (Array.isArray(data)) {
-        setItems(data);
-        setSelectedItemId((prev) => {
-          if (data.length === 0) {
-            return '';
-          }
+    const loadItems = async () => {
+      try {
+        const res = await fetch('/api/items');
+        const data = await res.json();
 
-          const exists = data.some((item) => item.id === prev);
-          return !prev || !exists ? data[0].id : prev;
-        });
+        if (!cancelled && Array.isArray(data)) {
+          setItems(data);
+          setSelectedItemId((prev) => {
+            if (data.length === 0) {
+              return '';
+            }
+
+            const exists = data.some((item) => item.id === prev);
+            return !prev || !exists ? data[0].id : prev;
+          });
+        }
+      } catch (err) {
+        console.error('Error fetching items:', err);
       }
-    } catch (err) {
-      console.error('Error fetching items:', err);
-    }
-  }, []);
+    };
 
-  const fetchChats = React.useCallback(async () => {
-    try {
-      const res = await fetch('/api/chats');
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        setChats(data);
-      }
-    } catch (err) {
-      console.error('Error fetching chats:', err);
-    }
+    void loadItems();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   React.useEffect(() => {
-    void fetchItems();
-  }, [fetchItems]);
-
-  React.useEffect(() => {
-    if (currentTab === 'Chat') {
-      void fetchChats();
+    if (currentTab !== 'Chat') {
+      return;
     }
-  }, [currentTab, fetchChats]);
+
+    let cancelled = false;
+
+    const loadChats = async () => {
+      try {
+        const res = await fetch('/api/chats');
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data)) {
+          setChats(data);
+        }
+      } catch (err) {
+        console.error('Error fetching chats:', err);
+      }
+    };
+
+    void loadChats();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentTab]);
 
   const startVoiceRecording = async () => {
     try {
@@ -274,7 +288,11 @@ export function VaultWorkspace({ identity }: { identity?: VaultIdentity }) {
       setUploadFileBase64('');
       setRecorderBlob(null);
       setRecorderUrl(null);
-      showToast(`Synthesized & saved "${newItem.title}"`);
+      showToast(
+        newItem.processingStatus === 'failed'
+          ? `"${newItem.title}" was saved, but processing failed.`
+          : `Synthesized & saved "${newItem.title}"`
+      );
     } catch (error) {
       console.error(error);
       showToast('Failed to synthesize content.');
@@ -309,7 +327,11 @@ export function VaultWorkspace({ identity }: { identity?: VaultIdentity }) {
       setItems((prev) => [newItem, ...prev]);
       setSelectedItemId(newItem.id);
       setInlineInput('');
-      showToast(`Added to library: "${newItem.title}"`);
+      showToast(
+        newItem.processingStatus === 'failed'
+          ? `"${newItem.title}" was saved, but processing failed.`
+          : `Added to library: "${newItem.title}"`
+      );
     } catch (err) {
       console.error(err);
       showToast('Failed to capture item.');
@@ -338,14 +360,14 @@ export function VaultWorkspace({ identity }: { identity?: VaultIdentity }) {
 
   const handleDeleteItem = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm('Are you sure you want to permanently delete this from your vault?')) return;
+    if (!confirm('Are you sure you want to move this item to trash?')) return;
     try {
       const res = await fetch(`/api/items/${id}`, {
         method: 'DELETE',
       });
       if (res.ok) {
         setItems((prev) => prev.filter((item) => item.id !== id));
-        showToast('Successfully deleted item from vault');
+        showToast('Moved item to trash');
         if (selectedItemId === id) {
           const remaining = items.filter((item) => item.id !== id);
           setSelectedItemId(remaining[0]?.id || '');

@@ -3,9 +3,9 @@ import {
   ChatMessage,
   ChatReferencedSource,
   Flashcard,
+  ItemPreviewMetadata,
   KnowledgeItem,
   formatRelativeDate,
-  getOnboardingItem,
 } from '@/lib/db';
 
 export const VAULT_BUCKET = 'vault-files';
@@ -17,11 +17,15 @@ type KnowledgeItemRow = {
   title: string;
   content: string;
   summary: string;
+  extracted_text: string | null;
   item_type: KnowledgeItem['type'];
+  processing_status: KnowledgeItem['processingStatus'];
+  failure_reason: string | null;
   tags: string[] | null;
   source: string;
   author: string | null;
   url: string | null;
+  preview_metadata: unknown;
   flashcards: unknown;
   image_url: string | null;
   read_time: string | null;
@@ -30,7 +34,9 @@ type KnowledgeItemRow = {
   file_path: string | null;
   file_mime: string | null;
   file_name: string | null;
+  deleted_at: string | null;
   created_at: string;
+  updated_at: string;
 };
 
 type ChatMessageRow = {
@@ -89,19 +95,64 @@ function normalizeReferencedSources(value: unknown): ChatReferencedSource[] {
     .filter((entry): entry is ChatReferencedSource => entry !== null);
 }
 
+function normalizePreviewMetadata(value: unknown): ItemPreviewMetadata | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const metadata = value as JsonRecord;
+  const previewMetadata: ItemPreviewMetadata = {};
+
+  if (typeof metadata.thumbnailUrl === 'string') {
+    previewMetadata.thumbnailUrl = metadata.thumbnailUrl;
+  }
+
+  if (typeof metadata.faviconUrl === 'string') {
+    previewMetadata.faviconUrl = metadata.faviconUrl;
+  }
+
+  if (typeof metadata.provider === 'string') {
+    previewMetadata.provider = metadata.provider;
+  }
+
+  if (typeof metadata.sourceUrl === 'string') {
+    previewMetadata.sourceUrl = metadata.sourceUrl;
+  }
+
+  if (typeof metadata.fileName === 'string') {
+    previewMetadata.fileName = metadata.fileName;
+  }
+
+  if (typeof metadata.mimeType === 'string') {
+    previewMetadata.mimeType = metadata.mimeType;
+  }
+
+  if (typeof metadata.byteSize === 'number') {
+    previewMetadata.byteSize = metadata.byteSize;
+  }
+
+  return Object.keys(previewMetadata).length > 0 ? previewMetadata : undefined;
+}
+
 export function mapKnowledgeItem(row: KnowledgeItemRow, fileUrl?: string): KnowledgeItem {
   return {
     id: row.id,
     title: row.title,
     content: row.content,
+    extractedText: row.extracted_text ?? undefined,
     summary: row.summary,
     type: row.item_type,
+    processingStatus: row.processing_status,
+    failureReason: row.failure_reason ?? undefined,
     tags: row.tags ?? [],
     createdAt: formatRelativeDate(row.created_at),
     createdAtDate: row.created_at,
+    updatedAtDate: row.updated_at,
+    deletedAt: row.deleted_at ?? undefined,
     source: row.source,
     author: row.author ?? undefined,
     url: row.url ?? undefined,
+    previewMetadata: normalizePreviewMetadata(row.preview_metadata),
     flashcards: normalizeFlashcards(row.flashcards),
     imageUrl: row.image_url ?? undefined,
     readTime: row.read_time ?? undefined,
@@ -130,7 +181,7 @@ export async function attachSignedUrls(
   supabase: SupabaseClient,
   rows: KnowledgeItemRow[]
 ): Promise<KnowledgeItem[]> {
-  const items = await Promise.all(
+  return Promise.all(
     rows.map(async (row) => {
       if (!row.file_path) {
         return mapKnowledgeItem(row);
@@ -143,8 +194,6 @@ export async function attachSignedUrls(
       return mapKnowledgeItem(row, data?.signedUrl);
     })
   );
-
-  return items.length > 0 ? items : [getOnboardingItem()];
 }
 
 export function matchesSearch(item: KnowledgeItem, query: string) {
@@ -157,7 +206,9 @@ export function matchesSearch(item: KnowledgeItem, query: string) {
   return (
     item.title.toLowerCase().includes(normalized) ||
     item.content.toLowerCase().includes(normalized) ||
+    (item.extractedText?.toLowerCase().includes(normalized) ?? false) ||
     item.summary.toLowerCase().includes(normalized) ||
+    item.source.toLowerCase().includes(normalized) ||
     item.tags.some((tag) => tag.toLowerCase().includes(normalized))
   );
 }

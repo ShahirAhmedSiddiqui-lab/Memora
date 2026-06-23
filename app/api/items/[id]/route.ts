@@ -20,6 +20,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       .select('*')
       .eq('id', id)
       .eq('user_id', user.id)
+      .is('deleted_at', null)
       .single();
 
     if (error || !item) {
@@ -67,6 +68,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       .update(updates)
       .eq('id', id)
       .eq('user_id', user.id)
+      .is('deleted_at', null)
       .select('*')
       .single();
 
@@ -100,23 +102,35 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 
     const { id } = await params;
 
+    const deletedAt = new Date().toISOString();
+
     const { data: deletedItem, error } = await supabase
       .from('knowledge_items')
-      .delete()
+      .update({
+        processing_status: 'trashed',
+        deleted_at: deletedAt,
+      })
       .eq('id', id)
       .eq('user_id', user.id)
-      .select('file_path')
+      .is('deleted_at', null)
+      .select('*')
       .single();
 
     if (error || !deletedItem) {
       return NextResponse.json({ error: 'Item not found' }, { status: 404 });
     }
 
+    let signedUrl: string | undefined;
     if (deletedItem.file_path) {
-      await supabase.storage.from(VAULT_BUCKET).remove([deletedItem.file_path]);
+      const { data } = await supabase.storage.from(VAULT_BUCKET).createSignedUrl(deletedItem.file_path, 60 * 60);
+      signedUrl = data?.signedUrl;
     }
 
-    return NextResponse.json({ success: true, message: 'Item deleted successfully' });
+    return NextResponse.json({
+      success: true,
+      message: 'Item moved to trash successfully',
+      item: mapKnowledgeItem(deletedItem, signedUrl),
+    });
   } catch (error) {
     console.error('Failed to delete item:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

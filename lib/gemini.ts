@@ -217,6 +217,10 @@ export async function askSecondBrain(
   referencedSources?: { title: string; source: string; type: string }[];
   tags?: string[];
 }> {
+  if (items.length === 0) {
+    return buildEmptyVaultChatResponse();
+  }
+
   const ai = getAiClient();
   if (!ai) {
     return buildFallbackChat(query, items);
@@ -355,6 +359,10 @@ function buildFallbackSummary(
 }
 
 function buildFallbackChat(query: string, items: KnowledgeItem[]) {
+  if (items.length === 0) {
+    return buildEmptyVaultChatResponse();
+  }
+
   const qLower = query.toLowerCase();
   const matched =
     items.find(
@@ -375,6 +383,16 @@ function buildFallbackChat(query: string, items: KnowledgeItem[]) {
       ? [{ title: matched.title, source: matched.source.toLowerCase(), type: matched.type.toLowerCase().slice(0, -1) }]
       : [],
     tags: matched ? [matched.source, 'Saved', matched.type] : ['System', 'Help'],
+  };
+}
+
+function buildEmptyVaultChatResponse() {
+  return {
+    answer: "I couldn't find any ready items in your vault yet.",
+    summaryBlock:
+      'Save or finish processing an article, video, PDF, social link, or voice note first, then ask again for a grounded answer.',
+    referencedSources: [],
+    tags: ['No Results', 'Empty Vault'],
   };
 }
 
