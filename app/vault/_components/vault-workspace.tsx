@@ -15,6 +15,7 @@ import {
   PanelLeft,
   Play,
   Plus,
+  RotateCcw,
   Search,
   Send,
   X,
@@ -34,10 +35,21 @@ type VaultIdentity = {
   email?: string;
 };
 
-type VaultTab = 'Overview' | 'Articles' | 'Videos' | 'PDFs' | 'Social Links' | 'Voice Notes' | 'Images' | 'Chat' | 'Guide';
+type VaultTab =
+  | 'Overview'
+  | 'Bookmarks'
+  | 'Trash'
+  | 'Articles'
+  | 'Videos'
+  | 'PDFs'
+  | 'Social Links'
+  | 'Voice Notes'
+  | 'Images'
+  | 'Chat'
+  | 'Guide';
 
 const captureCopy: Record<
-  Exclude<VaultTab, 'Overview' | 'Chat' | 'Guide'>,
+  Exclude<VaultTab, 'Overview' | 'Bookmarks' | 'Trash' | 'Chat' | 'Guide'>,
   {
     sourceLabel: string;
     sourcePlaceholder: string;
@@ -116,6 +128,7 @@ export function VaultWorkspace({ identity }: { identity?: VaultIdentity }) {
   const timerRef = React.useRef<any>(null);
   const chatScrollContainerRef = React.useRef<HTMLDivElement | null>(null);
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
+  const pendingRefreshAttemptsRef = React.useRef<Record<string, number>>({});
 
   const displayName = identity?.fullName?.trim() || 'Vault User';
   const displayEmail = identity?.email?.trim() || 'your-vault@memora.local';
@@ -124,6 +137,10 @@ export function VaultWorkspace({ identity }: { identity?: VaultIdentity }) {
   const currentSectionLabel =
     currentTab === 'Overview'
       ? 'Knowledge Workspace'
+      : currentTab === 'Bookmarks'
+        ? 'Bookmarked Knowledge'
+        : currentTab === 'Trash'
+          ? 'Trash Recovery'
       : currentTab === 'Guide'
         ? 'Vault Guide'
         : currentTab === 'Chat'
@@ -180,7 +197,7 @@ export function VaultWorkspace({ identity }: { identity?: VaultIdentity }) {
 
   const refreshItem = React.useCallback(
     async (itemId: string, fallbackTitle: string) => {
-      const delays = [1500, 4000];
+      const delays = [1500, 4000, 9000];
 
       for (const delay of delays) {
         await new Promise((resolve) => setTimeout(resolve, delay));
@@ -195,12 +212,14 @@ export function VaultWorkspace({ identity }: { identity?: VaultIdentity }) {
           upsertItem(updated);
 
           if (updated.processingStatus === 'ready') {
+            delete pendingRefreshAttemptsRef.current[updated.id];
             setSelectedItemId(updated.id);
             showToast(`Finished processing "${updated.title}"`);
             return;
           }
 
           if (updated.processingStatus === 'failed') {
+            delete pendingRefreshAttemptsRef.current[updated.id];
             setSelectedItemId(updated.id);
             showToast(`Saved "${updated.title}", but AI processing failed.`);
             return;
@@ -235,7 +254,7 @@ export function VaultWorkspace({ identity }: { identity?: VaultIdentity }) {
 
     const loadItems = async () => {
       try {
-        const res = await fetch('/api/items');
+        const res = await fetch('/api/items?include_trashed=true');
         const data = await res.json();
 
         if (!cancelled && Array.isArray(data)) {
@@ -260,6 +279,58 @@ export function VaultWorkspace({ identity }: { identity?: VaultIdentity }) {
       cancelled = true;
     };
   }, []);
+
+  React.useEffect(() => {
+    const pendingItems = items.filter((item) => item.processingStatus === 'pending' && !item.deletedAt);
+
+    if (pendingItems.length === 0) {
+      pendingRefreshAttemptsRef.current = {};
+      return;
+    }
+
+    const refreshableItems = pendingItems.filter((item) => {
+      const attempts = pendingRefreshAttemptsRef.current[item.id] ?? 0;
+      return attempts < 8;
+    });
+
+    if (refreshableItems.length === 0) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const res = await fetch('/api/items?include_trashed=true');
+        if (!res.ok) {
+          return;
+        }
+
+        const data = await res.json();
+        if (!Array.isArray(data)) {
+          return;
+        }
+
+        refreshableItems.forEach((item) => {
+          pendingRefreshAttemptsRef.current[item.id] = (pendingRefreshAttemptsRef.current[item.id] ?? 0) + 1;
+        });
+
+        setItems(data);
+        setSelectedItemId((prev) => {
+          if (data.length === 0) {
+            return '';
+          }
+
+          const exists = data.some((item) => item.id === prev);
+          return !prev || !exists ? data[0].id : prev;
+        });
+      } catch (err) {
+        console.error('Error refreshing pending items:', err);
+      }
+    }, 4000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [items]);
 
   React.useEffect(() => {
     if (currentTab !== 'Chat') {
@@ -506,15 +577,71 @@ export function VaultWorkspace({ identity }: { identity?: VaultIdentity }) {
         method: 'DELETE',
       });
       if (res.ok) {
-        setItems((prev) => prev.filter((item) => item.id !== id));
+        const payload = await res.json();
+        const trashedItem = payload?.item as KnowledgeItem | undefined;
+
+        if (trashedItem) {
+          upsertItem(trashedItem);
+        }
+
         showToast('Moved item to trash');
         if (selectedItemId === id) {
-          const remaining = items.filter((item) => item.id !== id);
+          const remaining = items.filter((item) => item.id !== id && !item.deletedAt);
           setSelectedItemId(remaining[0]?.id || '');
         }
       }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleRestoreItem = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    try {
+      const res = await fetch(`/api/items/${id}/restore`, {
+        method: 'POST',
+      });
+
+      if (!res.ok) {
+        throw new Error('Restore failed');
+      }
+
+      const restored = (await res.json()) as KnowledgeItem;
+      upsertItem(restored);
+      setSelectedItemId(restored.id);
+      setCurrentTab('Overview');
+      showToast(`Restored "${restored.title}" to your vault`);
+    } catch (err) {
+      console.error(err);
+      showToast('Unable to restore this item right now.');
+    }
+  };
+
+  const handlePermanentDeleteItem = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('Permanently delete this item from trash? This cannot be undone.')) return;
+
+    try {
+      const res = await fetch(`/api/items/${id}?permanent=true`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) {
+        throw new Error('Permanent delete failed');
+      }
+
+      setItems((prev) => prev.filter((item) => item.id !== id));
+
+      if (selectedItemId === id) {
+        const remainingTrashItems = items.filter((item) => item.id !== id && !!item.deletedAt);
+        setSelectedItemId(remainingTrashItems[0]?.id || '');
+      }
+
+      showToast('Item permanently deleted');
+    } catch (err) {
+      console.error(err);
+      showToast('Unable to permanently delete this item right now.');
     }
   };
 
@@ -567,7 +694,21 @@ export function VaultWorkspace({ identity }: { identity?: VaultIdentity }) {
 
     setLocalAskLoading(true);
     setLocalAskAnswer(null);
-    const relevantContext = items.filter((i) => currentTab === 'Overview' || i.type === currentTab);
+    const relevantContext = items.filter((item) => {
+      if (currentTab === 'Trash') {
+        return !!item.deletedAt;
+      }
+
+      if (item.deletedAt) {
+        return false;
+      }
+
+      if (currentTab === 'Bookmarks') {
+        return !!item.bookmarked;
+      }
+
+      return currentTab === 'Overview' || item.type === currentTab;
+    });
     const contextText = relevantContext.map((i) => `${i.title}: ${i.summary}`).join('\n\n');
 
     try {
@@ -608,7 +749,16 @@ export function VaultWorkspace({ identity }: { identity?: VaultIdentity }) {
   const visibleItems = React.useMemo(
     () =>
       items.filter((item) => {
-        const matchesTab = currentTab === 'Overview' || currentTab === 'Chat' || currentTab === 'Guide' || item.type === currentTab;
+        const matchesTab =
+          currentTab === 'Overview'
+            ? !item.deletedAt
+            : currentTab === 'Bookmarks'
+              ? !item.deletedAt && !!item.bookmarked
+              : currentTab === 'Trash'
+                ? !!item.deletedAt
+                : currentTab === 'Chat' || currentTab === 'Guide'
+                  ? !item.deletedAt
+                  : !item.deletedAt && item.type === currentTab;
         const matchesQuery = !searchQuery.trim() || matchesSearch(item, searchQuery);
         return matchesTab && matchesQuery;
       }),
@@ -617,18 +767,20 @@ export function VaultWorkspace({ identity }: { identity?: VaultIdentity }) {
 
   const currentItem =
     visibleItems.find((item) => item.id === selectedItemId) ||
-    items.find((item) => item.id === selectedItemId) ||
     visibleItems[0] ||
+    items.find((item) => item.id === selectedItemId) ||
     items[0];
 
   const categories = [
     { name: 'Overview', icon: Layers },
+    { name: 'Bookmarks', icon: Bookmark },
     { name: 'Articles', icon: FileText },
     { name: 'Videos', icon: Play },
     { name: 'PDFs', icon: BookOpen },
     { name: 'Images', icon: ImageIcon },
     { name: 'Social Links', icon: Globe },
     { name: 'Voice Notes', icon: Mic },
+    { name: 'Trash', icon: RotateCcw },
   ];
 
   return (
@@ -686,7 +838,14 @@ export function VaultWorkspace({ identity }: { identity?: VaultIdentity }) {
               {categories.map((cat) => {
                 const Icon = cat.icon;
                 const isSelected = currentTab === cat.name;
-                const count = cat.name === 'Overview' ? items.length : items.filter((item) => item.type === cat.name).length;
+                const count =
+                  cat.name === 'Overview'
+                    ? items.filter((item) => !item.deletedAt).length
+                    : cat.name === 'Bookmarks'
+                      ? items.filter((item) => !item.deletedAt && !!item.bookmarked).length
+                      : cat.name === 'Trash'
+                        ? items.filter((item) => !!item.deletedAt).length
+                        : items.filter((item) => !item.deletedAt && item.type === cat.name).length;
 
                 return (
                   <button
@@ -866,6 +1025,7 @@ export function VaultWorkspace({ identity }: { identity?: VaultIdentity }) {
               <VaultContentPanel
                 currentTab={currentTab}
                 items={items}
+                isTrashView={currentTab === 'Trash'}
                 searchQuery={searchQuery}
                 selectedItemId={selectedItemId}
                 inlineInput={inlineInput}
@@ -884,11 +1044,14 @@ export function VaultWorkspace({ identity }: { identity?: VaultIdentity }) {
                 }}
                 onToggleBookmark={handleToggleBookmark}
                 onDeleteItem={handleDeleteItem}
+                onRestoreItem={handleRestoreItem}
+                onPermanentDeleteItem={handlePermanentDeleteItem}
                 onRetryItem={handleRetryItem}
               />
 
               <VaultDetailPanel
                 currentItem={currentItem}
+                isTrashView={currentTab === 'Trash'}
                 flippedCardId={flippedCardId}
                 voiceSpeed={voiceSpeed}
                 audioRef={audioRef}
@@ -896,6 +1059,8 @@ export function VaultWorkspace({ identity }: { identity?: VaultIdentity }) {
                 onFlipCard={setFlippedCardId}
                 onToggleBookmark={handleToggleBookmark}
                 onDeleteItem={handleDeleteItem}
+                onRestoreItem={handleRestoreItem}
+                onPermanentDeleteItem={handlePermanentDeleteItem}
                 onRetryItem={handleRetryItem}
               />
             </div>

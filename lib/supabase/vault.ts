@@ -146,6 +146,7 @@ export function mapKnowledgeItem(row: KnowledgeItemRow, fileUrl?: string): Knowl
     row.item_type === 'Images' && fileUrl
       ? fileUrl
       : row.image_url ?? previewMetadata?.thumbnailUrl ?? undefined;
+  const processingStatus = row.deleted_at ? 'trashed' : row.processing_status;
 
   return {
     id: row.id,
@@ -155,7 +156,7 @@ export function mapKnowledgeItem(row: KnowledgeItemRow, fileUrl?: string): Knowl
     summary: row.summary,
     type: row.item_type,
     captureKind: row.capture_kind ?? undefined,
-    processingStatus: row.processing_status,
+    processingStatus,
     failureReason: row.failure_reason ?? undefined,
     tags: row.tags ?? [],
     createdAt: formatRelativeDate(row.created_at),

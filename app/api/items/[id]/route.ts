@@ -89,7 +89,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const supabase = await createClient();
     const {
@@ -101,6 +101,46 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     }
 
     const { id } = await params;
+    const permanentDelete = req.nextUrl.searchParams.get('permanent') === 'true';
+
+    if (permanentDelete) {
+      const { data: existingItem, error: fetchError } = await supabase
+        .from('knowledge_items')
+        .select('*')
+        .eq('id', id)
+        .eq('user_id', user.id)
+        .not('deleted_at', 'is', null)
+        .single();
+
+      if (fetchError || !existingItem) {
+        return NextResponse.json({ error: 'Trashed item not found' }, { status: 404 });
+      }
+
+      if (existingItem.file_path) {
+        const { error: storageError } = await supabase.storage.from(VAULT_BUCKET).remove([existingItem.file_path]);
+
+        if (storageError) {
+          console.error('Failed to remove file from storage:', storageError);
+        }
+      }
+
+      const { error: deleteError } = await supabase
+        .from('knowledge_items')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', user.id)
+        .not('deleted_at', 'is', null);
+
+      if (deleteError) {
+        return NextResponse.json({ error: 'Failed to permanently delete item' }, { status: 500 });
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: 'Item permanently deleted',
+        deletedId: id,
+      });
+    }
 
     const deletedAt = new Date().toISOString();
 

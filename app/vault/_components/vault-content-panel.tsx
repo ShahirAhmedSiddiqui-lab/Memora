@@ -2,15 +2,16 @@
 
 import * as React from 'react';
 import { motion } from 'motion/react';
-import { Activity, ArrowRight, Bookmark, Inbox, LoaderCircle, RefreshCw, Trash2, X } from 'lucide-react';
+import { Activity, ArrowRight, Bookmark, Inbox, LoaderCircle, RefreshCw, RotateCcw, Trash2, X } from 'lucide-react';
 import { KnowledgeItem } from '@/lib/db';
 import { matchesSearch } from '@/lib/supabase/vault';
 import { cn } from '@/lib/utils';
 import { FormattedMarkdown } from './formatted-markdown';
 
 type VaultContentPanelProps = {
-  currentTab: 'Overview' | 'Articles' | 'Videos' | 'PDFs' | 'Social Links' | 'Voice Notes' | 'Images';
+  currentTab: 'Overview' | 'Bookmarks' | 'Trash' | 'Articles' | 'Videos' | 'PDFs' | 'Social Links' | 'Voice Notes' | 'Images';
   items: KnowledgeItem[];
+  isTrashView: boolean;
   searchQuery: string;
   selectedItemId: string;
   inlineInput: string;
@@ -26,12 +27,15 @@ type VaultContentPanelProps = {
   onSelectItem: (id: string) => void;
   onToggleBookmark: (id: string, currentStatus: boolean, event?: React.MouseEvent) => void;
   onDeleteItem: (id: string, event: React.MouseEvent) => void;
+  onRestoreItem: (id: string, event: React.MouseEvent) => void;
+  onPermanentDeleteItem: (id: string, event: React.MouseEvent) => void;
   onRetryItem: (id: string, event: React.MouseEvent) => void;
 };
 
 export function VaultContentPanel({
   currentTab,
   items,
+  isTrashView,
   searchQuery,
   selectedItemId,
   inlineInput,
@@ -47,12 +51,21 @@ export function VaultContentPanel({
   onSelectItem,
   onToggleBookmark,
   onDeleteItem,
+  onRestoreItem,
+  onPermanentDeleteItem,
   onRetryItem,
 }: VaultContentPanelProps) {
   const filteredItems = React.useMemo(
     () =>
       items.filter((item) => {
-        const matchesTab = currentTab === 'Overview' || item.type === currentTab;
+        const matchesTab =
+          currentTab === 'Overview'
+            ? !item.deletedAt
+            : currentTab === 'Bookmarks'
+              ? !item.deletedAt && !!item.bookmarked
+              : currentTab === 'Trash'
+                ? !!item.deletedAt
+                : !item.deletedAt && item.type === currentTab;
         const matchesQuery = !searchQuery.trim() || matchesSearch(item, searchQuery);
         return matchesTab && matchesQuery;
       }),
@@ -94,7 +107,13 @@ export function VaultContentPanel({
       <div className="flex justify-between items-center mb-6">
         <div>
           <h2 className="text-base font-bold tracking-tight text-neutral-900">
-            {currentTab === 'Overview' ? 'Your Personal Vault' : `Saved ${currentTab}`}
+            {currentTab === 'Overview'
+              ? 'Your Personal Vault'
+              : currentTab === 'Bookmarks'
+                ? 'Bookmarked Items'
+                : currentTab === 'Trash'
+                  ? 'Trash Recovery'
+                  : `Saved ${currentTab}`}
           </h2>
           <p className="text-neutral-500 text-[11px] font-medium leading-relaxed font-mono">
             {filteredItems.length} total elements saved
@@ -215,7 +234,7 @@ export function VaultContentPanel({
                 </span>
 
                 <div className="flex items-center space-x-1.5 opacity-100 transition shrink-0 z-10">
-                  {item.processingStatus === 'failed' && (
+                  {!isTrashView && item.processingStatus === 'failed' && (
                     <button
                       onClick={(e) => onRetryItem(item.id, e)}
                       className="text-amber-600 hover:text-amber-700 p-0.5"
@@ -231,13 +250,32 @@ export function VaultContentPanel({
                   >
                     <Bookmark className={cn('w-3.5 h-3.5', item.bookmarked ? 'fill-neutral-900 text-neutral-900' : 'text-neutral-300')} />
                   </button>
-                  <button
-                    onClick={(e) => onDeleteItem(item.id, e)}
-                    className="text-neutral-400 hover:text-red-500 p-0.5"
-                    title="Delete entry"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  {isTrashView ? (
+                    <>
+                      <button
+                        onClick={(e) => onRestoreItem(item.id, e)}
+                        className="text-neutral-400 hover:text-emerald-600 p-0.5"
+                        title="Restore entry"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={(e) => onPermanentDeleteItem(item.id, e)}
+                        className="text-neutral-400 hover:text-red-500 p-0.5"
+                        title="Delete forever"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={(e) => onDeleteItem(item.id, e)}
+                      className="text-neutral-400 hover:text-red-500 p-0.5"
+                      title="Delete entry"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -246,7 +284,7 @@ export function VaultContentPanel({
                 <p className="text-neutral-500 text-[11px] leading-relaxed line-clamp-3">{item.summary}</p>
               </div>
 
-              {item.processingStatus !== 'ready' && (
+              {!isTrashView && item.processingStatus !== 'ready' && item.processingStatus !== 'trashed' && (
                 <div
                   className={cn(
                     'mt-3 flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-[10px] font-mono',
@@ -278,7 +316,11 @@ export function VaultContentPanel({
             <Inbox className="w-10 h-10 text-neutral-300 mx-auto mb-3" />
             <p className="text-xs font-semibold text-neutral-600 mb-1">No items discovered in {currentTab}</p>
             <p className="text-[10.5px] text-neutral-400 max-w-xs mx-auto">
-              Paste research parameters in the bar at the top to auto-synthesize raw content.
+              {currentTab === 'Trash'
+                ? 'Deleted captures stay here until you restore them back into your active vault.'
+                : currentTab === 'Bookmarks'
+                  ? 'Bookmark an item from the vault list or detail view to keep it in this section.'
+                  : 'Paste research parameters in the bar at the top to auto-synthesize raw content.'}
             </p>
           </div>
         )}

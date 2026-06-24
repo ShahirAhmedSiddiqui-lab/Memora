@@ -4,12 +4,13 @@
 
 import * as React from 'react';
 import { motion } from 'motion/react';
-import { Bookmark, BookOpen, ExternalLink, ImageIcon, Layers, LoaderCircle, Play, RefreshCw, Trash2, Volume2 } from 'lucide-react';
+import { Bookmark, BookOpen, ExternalLink, ImageIcon, Layers, LoaderCircle, Play, RefreshCw, RotateCcw, Trash2, Volume2 } from 'lucide-react';
 import { KnowledgeItem } from '@/lib/db';
 import { cn } from '@/lib/utils';
 
 type VaultDetailPanelProps = {
   currentItem?: KnowledgeItem;
+  isTrashView: boolean;
   flippedCardId: string | null;
   voiceSpeed: number;
   audioRef: React.RefObject<HTMLAudioElement | null>;
@@ -17,11 +18,14 @@ type VaultDetailPanelProps = {
   onFlipCard: (id: string | null) => void;
   onToggleBookmark: (id: string, currentStatus: boolean, event?: React.MouseEvent) => void;
   onDeleteItem: (id: string, event: React.MouseEvent) => void;
+  onRestoreItem: (id: string, event: React.MouseEvent) => void;
+  onPermanentDeleteItem: (id: string, event: React.MouseEvent) => void;
   onRetryItem: (id: string, event: React.MouseEvent) => void;
 };
 
 export function VaultDetailPanel({
   currentItem,
+  isTrashView,
   flippedCardId,
   voiceSpeed,
   audioRef,
@@ -29,6 +33,8 @@ export function VaultDetailPanel({
   onFlipCard,
   onToggleBookmark,
   onDeleteItem,
+  onRestoreItem,
+  onPermanentDeleteItem,
   onRetryItem,
 }: VaultDetailPanelProps) {
   if (!currentItem) {
@@ -68,15 +74,36 @@ export function VaultDetailPanel({
                 <Bookmark className={cn('w-3 h-3', currentItem.bookmarked ? 'fill-neutral-900 text-neutral-900' : 'text-neutral-400')} />
                 <span>{currentItem.bookmarked ? 'Saved' : 'Save'}</span>
               </button>
-              <button
-                onClick={(e) => onDeleteItem(currentItem.id, e)}
-                className="text-red-650 hover:text-red-705 flex items-center space-x-0.5 text-[10px] font-mono font-bold"
-                title="Delete entry"
-              >
-                <Trash2 className="w-3 h-3" />
-                <span>Delete</span>
-              </button>
-              {currentItem.processingStatus === 'failed' && (
+              {isTrashView ? (
+                <>
+                  <button
+                    onClick={(e) => onRestoreItem(currentItem.id, e)}
+                    className="text-emerald-700 hover:text-emerald-800 flex items-center space-x-0.5 text-[10px] font-mono font-bold"
+                    title="Restore entry"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Restore</span>
+                  </button>
+                  <button
+                    onClick={(e) => onPermanentDeleteItem(currentItem.id, e)}
+                    className="text-red-650 hover:text-red-705 flex items-center space-x-0.5 text-[10px] font-mono font-bold"
+                    title="Delete forever"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    <span>Delete Forever</span>
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={(e) => onDeleteItem(currentItem.id, e)}
+                  className="text-red-650 hover:text-red-705 flex items-center space-x-0.5 text-[10px] font-mono font-bold"
+                  title="Delete entry"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  <span>Delete</span>
+                </button>
+              )}
+              {!isTrashView && currentItem.processingStatus === 'failed' && (
                 <button
                   onClick={(e) => onRetryItem(currentItem.id, e)}
                   className="text-amber-700 hover:text-amber-800 flex items-center space-x-0.5 text-[10px] font-mono font-bold"
@@ -91,7 +118,7 @@ export function VaultDetailPanel({
           <h3 className="font-extrabold text-neutral-900 text-sm leading-snug">{currentItem.title}</h3>
         </div>
 
-        {currentItem.processingStatus !== 'ready' && (
+        {!isTrashView && currentItem.processingStatus !== 'ready' && currentItem.processingStatus !== 'trashed' && (
           <div
             className={cn(
               'border rounded-xl p-4 space-y-1.5',
