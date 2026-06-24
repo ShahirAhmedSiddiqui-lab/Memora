@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
+  AlertTriangle,
   BookOpen,
   Bot,
   CheckCircle,
@@ -33,6 +34,14 @@ import { VaultDetailPanel } from './vault-detail-panel';
 type VaultIdentity = {
   fullName?: string;
   email?: string;
+};
+
+type ConfirmDialogState = {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  cancelLabel?: string;
+  tone?: 'default' | 'danger';
 };
 
 type VaultTab =
@@ -123,12 +132,14 @@ export function VaultWorkspace({ identity }: { identity?: VaultIdentity }) {
   const [flippedCardId, setFlippedCardId] = React.useState<string | null>(null);
   const [isSendingChat, setIsSendingChat] = React.useState(false);
   const [notification, setNotification] = React.useState<string | null>(null);
+  const [confirmDialog, setConfirmDialog] = React.useState<ConfirmDialogState | null>(null);
 
   const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
   const timerRef = React.useRef<any>(null);
   const chatScrollContainerRef = React.useRef<HTMLDivElement | null>(null);
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
   const pendingRefreshAttemptsRef = React.useRef<Record<string, number>>({});
+  const confirmResolverRef = React.useRef<((value: boolean) => void) | null>(null);
 
   const displayName = identity?.fullName?.trim() || 'Vault User';
   const displayEmail = identity?.email?.trim() || 'your-vault@memora.local';
@@ -176,10 +187,45 @@ export function VaultWorkspace({ identity }: { identity?: VaultIdentity }) {
     }
   }, [voiceSpeed, selectedItemId]);
 
+  const closeConfirmDialog = React.useCallback((confirmed: boolean) => {
+    if (confirmResolverRef.current) {
+      confirmResolverRef.current(confirmed);
+      confirmResolverRef.current = null;
+    }
+
+    setConfirmDialog(null);
+  }, []);
+
   const showToast = React.useCallback((message: string) => {
     setNotification(message);
     setTimeout(() => setNotification(null), 3000);
   }, []);
+
+  const requestConfirmation = React.useCallback((options: ConfirmDialogState) => {
+    setConfirmDialog(options);
+
+    return new Promise<boolean>((resolve) => {
+      confirmResolverRef.current = resolve;
+    });
+  }, []);
+
+  React.useEffect(() => {
+    if (!confirmDialog) {
+      return;
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeConfirmDialog(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape);
+
+    return () => {
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [closeConfirmDialog, confirmDialog]);
 
   const upsertItem = React.useCallback((nextItem: KnowledgeItem) => {
     setItems((prev) => {
@@ -571,7 +617,16 @@ export function VaultWorkspace({ identity }: { identity?: VaultIdentity }) {
 
   const handleDeleteItem = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm('Are you sure you want to move this item to trash?')) return;
+    const confirmed = await requestConfirmation({
+      title: 'Move item to trash?',
+      message: 'The item will leave your active vault and move into Trash Recovery, where you can restore it later.',
+      confirmLabel: 'Move to Trash',
+      cancelLabel: 'Keep Item',
+      tone: 'default',
+    });
+
+    if (!confirmed) return;
+
     try {
       const res = await fetch(`/api/items/${id}`, {
         method: 'DELETE',
@@ -620,7 +675,15 @@ export function VaultWorkspace({ identity }: { identity?: VaultIdentity }) {
 
   const handlePermanentDeleteItem = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm('Permanently delete this item from trash? This cannot be undone.')) return;
+    const confirmed = await requestConfirmation({
+      title: 'Delete this item forever?',
+      message: 'This will permanently remove the item from Trash Recovery and cannot be undone.',
+      confirmLabel: 'Delete Forever',
+      cancelLabel: 'Cancel',
+      tone: 'danger',
+    });
+
+    if (!confirmed) return;
 
     try {
       const res = await fetch(`/api/items/${id}?permanent=true`, {
@@ -734,7 +797,16 @@ export function VaultWorkspace({ identity }: { identity?: VaultIdentity }) {
   };
 
   const handleClearHistory = async () => {
-    if (!confirm('Are you sure you want to clear chat history? Your indexed library items will remain safe.')) return;
+    const confirmed = await requestConfirmation({
+      title: 'Clear chat history?',
+      message: 'This removes saved chat messages only. Your vault items, files, and captures will stay safe.',
+      confirmLabel: 'Clear History',
+      cancelLabel: 'Keep History',
+      tone: 'danger',
+    });
+
+    if (!confirmed) return;
+
     try {
       const response = await fetch('/api/chats', { method: 'DELETE' });
       if (response.ok) {
@@ -1517,6 +1589,86 @@ export function VaultWorkspace({ identity }: { identity?: VaultIdentity }) {
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {confirmDialog && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.45 }}
+              exit={{ opacity: 0 }}
+              onClick={() => closeConfirmDialog(false)}
+              className="absolute inset-0 bg-neutral-950"
+            />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 12 }}
+              className="relative z-10 w-full max-w-md overflow-hidden rounded-[28px] border border-neutral-200 bg-[linear-gradient(180deg,#ffffff_0%,#f7f5f1_100%)] p-6 shadow-2xl"
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="confirm-dialog-title"
+              aria-describedby="confirm-dialog-message"
+            >
+              <div className="mb-5 flex items-start justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div
+                    className={cn(
+                      'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border',
+                      confirmDialog.tone === 'danger'
+                        ? 'border-red-200 bg-red-50 text-red-700'
+                        : 'border-neutral-200 bg-neutral-100 text-neutral-800'
+                    )}
+                  >
+                    <AlertTriangle className="h-5 w-5" />
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-neutral-400">Confirm Action</p>
+                    <h3 id="confirm-dialog-title" className="text-lg font-bold tracking-tight text-neutral-950">
+                      {confirmDialog.title}
+                    </h3>
+                    <p id="confirm-dialog-message" className="text-sm leading-relaxed text-neutral-600">
+                      {confirmDialog.message}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => closeConfirmDialog(false)}
+                  className="rounded-full p-1 text-neutral-400 transition hover:text-neutral-900"
+                  aria-label="Close confirmation dialog"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={() => closeConfirmDialog(false)}
+                  className="rounded-xl border border-neutral-200 px-4 py-2.5 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-50"
+                >
+                  {confirmDialog.cancelLabel ?? 'Cancel'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => closeConfirmDialog(true)}
+                  className={cn(
+                    'rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition',
+                    confirmDialog.tone === 'danger'
+                      ? 'bg-red-600 hover:bg-red-700'
+                      : 'bg-neutral-900 hover:bg-neutral-800'
+                  )}
+                >
+                  {confirmDialog.confirmLabel}
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
