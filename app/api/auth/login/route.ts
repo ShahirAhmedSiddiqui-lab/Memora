@@ -19,7 +19,13 @@ export async function POST(req: NextRequest) {
     });
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      const normalizedErrorMessage = error.message.toLowerCase();
+      const status = normalizedErrorMessage.includes('email not confirmed') ? 403 : 400;
+      const message = normalizedErrorMessage.includes('email not confirmed')
+        ? 'Confirm your email before logging in. Check your inbox for the verification message.'
+        : error.message;
+
+      return NextResponse.json({ error: message }, { status });
     }
 
     return NextResponse.json({

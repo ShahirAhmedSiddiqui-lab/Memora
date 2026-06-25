@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, RefreshCcw } from 'lucide-react';
 import { BrandLockup } from '@/app/_components/brand-lockup';
+import { PasswordInput } from '@/app/_components/password-input';
 import { createClient } from '@/lib/supabase/client';
 
 export function ResetPasswordClient() {
@@ -201,32 +202,14 @@ export function ResetPasswordClient() {
                   <label htmlFor="password" className="text-xs font-bold uppercase tracking-[0.24em] text-neutral-400">
                     New Password
                   </label>
-                  <input
-                    id="password"
-                    type="password"
-                    required
-                    minLength={6}
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    className="w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-900 outline-none transition focus:border-neutral-900 focus:bg-white"
-                    placeholder="Minimum 6 characters"
-                  />
+                  <PasswordInput id="password" required minLength={6} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Minimum 6 characters" />
                 </div>
 
                 <div className="space-y-2">
                   <label htmlFor="confirmPassword" className="text-xs font-bold uppercase tracking-[0.24em] text-neutral-400">
                     Confirm Password
                   </label>
-                  <input
-                    id="confirmPassword"
-                    type="password"
-                    required
-                    minLength={6}
-                    value={confirmPassword}
-                    onChange={(event) => setConfirmPassword(event.target.value)}
-                    className="w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-900 outline-none transition focus:border-neutral-900 focus:bg-white"
-                    placeholder="Repeat your new password"
-                  />
+                  <PasswordInput id="confirmPassword" required minLength={6} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Repeat your new password" />
                 </div>
               </>
             )}

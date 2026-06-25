@@ -1,10 +1,9 @@
 import { redirect } from 'next/navigation';
-import Link from 'next/link';
 import { LockKeyhole, UserRound } from 'lucide-react';
-import { login, signup } from './actions';
 import { BrandLockup } from '../_components/brand-lockup';
 import { createClient } from '@/lib/supabase/server';
 import { getSafeUser } from '@/lib/supabase/auth';
+import { LoginFormClient } from './login-form-client';
 
 export default async function LoginPage({
   searchParams,
@@ -61,76 +60,7 @@ export default async function LoginPage({
             <h2 className="mt-2 text-2xl font-black tracking-tight text-neutral-950">Login or create an account</h2>
           </div>
 
-          {message ? (
-            <div className="mb-5 rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-700">
-              {message}
-            </div>
-          ) : null}
-
-          <form className="space-y-4">
-            <div className="space-y-2">
-              <label htmlFor="name" className="text-xs font-bold uppercase tracking-[0.24em] text-neutral-400">
-                Full Name
-              </label>
-              <input
-                id="name"
-                name="name"
-                type="text"
-                placeholder="Memora User"
-                className="w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-900 outline-none transition focus:border-neutral-900 focus:bg-white"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label htmlFor="email" className="text-xs font-bold uppercase tracking-[0.24em] text-neutral-400">
-                Email
-              </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                required
-                placeholder="you@example.com"
-                className="w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-900 outline-none transition focus:border-neutral-900 focus:bg-white"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label htmlFor="password" className="text-xs font-bold uppercase tracking-[0.24em] text-neutral-400">
-                Password
-              </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                required
-                minLength={6}
-                placeholder="Minimum 6 characters"
-                className="w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-900 outline-none transition focus:border-neutral-900 focus:bg-white"
-              />
-            </div>
-
-            <div className="flex justify-end">
-              <Link href="/reset-password" className="text-xs font-semibold text-neutral-500 transition hover:text-neutral-950">
-                Forgot your password?
-              </Link>
-            </div>
-
-            <div className="grid gap-3 pt-2 sm:grid-cols-2">
-              <button
-                formAction={login}
-                className="rounded-2xl bg-neutral-950 px-4 py-3 text-sm font-bold text-white transition hover:bg-neutral-800"
-              >
-                Log In
-              </button>
-              <button
-                formAction={signup}
-                className="rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm font-bold text-neutral-900 transition hover:border-neutral-900"
-              >
-                Sign Up
-              </button>
-            </div>
-          </form>
+          <LoginFormClient initialMessage={message} />
         </section>
       </div>
     </main>

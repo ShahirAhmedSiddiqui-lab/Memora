@@ -4,9 +4,14 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { SUPABASE_EMAIL_CONFIRMATION_REDIRECT_URL } from '@/lib/supabase/auth-redirects';
+import { type User } from '@supabase/supabase-js';
 
 function redirectWithMessage(message: string) {
   redirect(`/login?message=${encodeURIComponent(message)}`);
+}
+
+function isExistingSignupAttempt(user: User | null) {
+  return !!user && Array.isArray(user.identities) && user.identities.length === 0;
 }
 
 export async function login(formData: FormData) {
@@ -57,6 +62,10 @@ export async function signup(formData: FormData) {
   if (error) {
     console.error('Signup error:', error.message);
     redirectWithMessage(error.message);
+  }
+
+  if (isExistingSignupAttempt(data.user)) {
+    redirectWithMessage('This email already has an account. Try logging in instead.');
   }
 
   revalidatePath('/', 'layout');

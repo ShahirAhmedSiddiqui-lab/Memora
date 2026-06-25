@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { type User } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { SUPABASE_EMAIL_CONFIRMATION_REDIRECT_URL } from '@/lib/supabase/auth-redirects';
+
+function isExistingSignupAttempt(user: User | null) {
+  return !!user && Array.isArray(user.identities) && user.identities.length === 0;
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -34,6 +39,16 @@ export async function POST(req: NextRequest) {
     if (error) {
       console.error('Signup error:', error.message);
       return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    if (isExistingSignupAttempt(data.user)) {
+      return NextResponse.json(
+        {
+          error: 'This email already has an account. Try logging in instead.',
+          code: 'existing_account',
+        },
+        { status: 409 }
+      );
     }
 
     return NextResponse.json({
