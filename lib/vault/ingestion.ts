@@ -3,6 +3,7 @@ import { generateKnowledgeItemAnalysis } from '@/lib/ai/service';
 import { type KnowledgeItem } from '@/lib/db';
 import { VAULT_BUCKET } from '@/lib/supabase/vault';
 import { normalizeVaultMimeType, validateVaultUpload } from '@/lib/vault/uploads';
+import { extractRemoteSourceData, inferPreviewFromFile } from '@/lib/vault/extraction';
 import {
   buildPreviewMetadata,
   deriveSourceLabel,
@@ -78,6 +79,11 @@ type RemotePreviewData = {
   thumbnailUrl?: string;
   provider?: string;
   authorName?: string;
+  canonicalUrl?: string;
+  previewUrl?: string;
+  embedUrl?: string;
+  mediaKind?: 'video' | 'pdf' | 'image' | 'audio' | 'article' | 'social' | 'unknown';
+  extractedText?: string;
 };
 
 export async function createAndProcessItem(
@@ -243,7 +249,7 @@ async function prepareItemDraft(input: ItemDraftInput): Promise<PreparedDraft> {
     fileData: input.fileData,
     url,
   });
-  const remotePreview = url ? await fetchRemotePreviewData(url) : null;
+  const remotePreview = url ? await extractRemoteSourceData(url, itemType) : null;
   const initialSource = deriveSourceLabel(url, input.fileData?.name);
   const previewMetadata = buildPreviewMetadata({
     url,
@@ -255,6 +261,10 @@ async function prepareItemDraft(input: ItemDraftInput): Promise<PreparedDraft> {
     authorName: remotePreview?.authorName,
     provider: remotePreview?.provider,
   });
+  previewMetadata.previewUrl = remotePreview?.previewUrl || url;
+  previewMetadata.embedUrl = remotePreview?.embedUrl;
+  previewMetadata.canonicalUrl = remotePreview?.canonicalUrl || url;
+  previewMetadata.mediaKind = remotePreview?.mediaKind || inferPreviewFromFile(input.fileData);
   const initialTitle = remotePreview?.title?.trim()
     || getInitialItemTitle({
       content,
@@ -277,7 +287,7 @@ async function prepareItemDraft(input: ItemDraftInput): Promise<PreparedDraft> {
     initialTitle,
     initialSource,
     storedContent,
-    extractedText: content,
+    extractedText: content?.trim() || remotePreview?.extractedText,
     initialImageUrl: itemType === 'Images'
       ? ''
       : previewMetadata.thumbnailUrl || getDefaultPreviewImage(itemType),
@@ -585,132 +595,5 @@ function getPreviewFavicon(urlInput: string, captureKind: SupportedItemCaptureKi
     return `https://www.google.com/s2/favicons?sz=128&domain=${domain}`;
   } catch {
     return null;
-  }
-}
-
-async function fetchRemotePreviewData(url: string): Promise<RemotePreviewData | null> {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 MemoraBot/1.0',
-      },
-      cache: 'no-store',
-    });
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const contentType = response.headers.get('content-type') || '';
-    if (!contentType.includes('text/html')) {
-      return null;
-    }
-
-    const html = await response.text();
-    const provider = detectPreviewProvider(url, html);
-    const thumbnailUrl = resolvePreviewUrl(
-      url,
-      findMetaContent(html, ['property', 'og:image'])
-      || findMetaContent(html, ['property', 'og:image:secure_url'])
-      || findMetaContent(html, ['name', 'og:image'])
-      || findMetaContent(html, ['name', 'twitter:image'])
-      || findMetaContent(html, ['property', 'twitter:image'])
-      || findMetaContent(html, ['property', 'twitter:image:src'])
-      || findMetaContent(html, ['itemprop', 'image'])
-    );
-    const title =
-      findMetaContent(html, ['property', 'og:title'])
-      || findMetaContent(html, ['name', 'og:title'])
-      || findMetaContent(html, ['name', 'twitter:title'])
-      || findMetaContent(html, ['property', 'twitter:title'])
-      || extractHtmlTag(html, 'title');
-    const description =
-      findMetaContent(html, ['property', 'og:description'])
-      || findMetaContent(html, ['name', 'og:description'])
-      || findMetaContent(html, ['name', 'twitter:description'])
-      || findMetaContent(html, ['property', 'twitter:description'])
-      || findMetaContent(html, ['name', 'description']);
-    const authorName =
-      findMetaContent(html, ['name', 'author'])
-      || findMetaContent(html, ['property', 'article:author'])
-      || findMetaContent(html, ['property', 'og:article:author'])
-      || findMetaContent(html, ['name', 'twitter:creator']);
-
-    return {
-      title: title || undefined,
-      description: description || undefined,
-      thumbnailUrl: thumbnailUrl || undefined,
-      provider,
-      authorName: authorName || undefined,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function detectPreviewProvider(url: string, html: string) {
-  try {
-    const hostname = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
-
-    if (hostname === 'x.com' || hostname === 'twitter.com') {
-      return 'X';
-    }
-    if (hostname.includes('linkedin.com')) {
-      return 'LinkedIn';
-    }
-    if (hostname.includes('instagram.com')) {
-      return 'Instagram';
-    }
-
-    return findMetaContent(html, ['property', 'og:site_name']) || hostname;
-  } catch {
-    return findMetaContent(html, ['property', 'og:site_name']) || undefined;
-  }
-}
-
-function findMetaContent(html: string, attribute: [string, string]) {
-  const [name, value] = attribute;
-  const escapedValue = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const patterns = [
-    new RegExp(`<meta[^>]*${name}=["']${escapedValue}["'][^>]*content=["']([^"']+)["'][^>]*>`, 'i'),
-    new RegExp(`<meta[^>]*content=["']([^"']+)["'][^>]*${name}=["']${escapedValue}["'][^>]*>`, 'i'),
-  ];
-
-  for (const pattern of patterns) {
-    const match = html.match(pattern);
-    const content = normalizePreviewText(match?.[1] || '');
-    if (content) {
-      return content;
-    }
-  }
-
-  return '';
-}
-
-function extractHtmlTag(html: string, tagName: string) {
-  const match = html.match(new RegExp(`<${tagName}[^>]*>([\\s\\S]*?)<\\/${tagName}>`, 'i'));
-  return normalizePreviewText(match?.[1] || '');
-}
-
-function normalizePreviewText(value: string) {
-  return value
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function resolvePreviewUrl(baseUrl: string, candidate: string) {
-  if (!candidate) {
-    return '';
-  }
-
-  try {
-    return new URL(candidate, baseUrl).toString();
-  } catch {
-    return candidate;
   }
 }

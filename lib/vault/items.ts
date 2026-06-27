@@ -11,12 +11,16 @@ export type ItemPreviewMetadata = {
   faviconUrl?: string;
   provider?: string;
   sourceUrl?: string;
+  previewUrl?: string;
+  embedUrl?: string;
+  canonicalUrl?: string;
   title?: string;
   description?: string;
   authorName?: string;
   fileName?: string;
   mimeType?: string;
   byteSize?: number;
+  mediaKind?: 'video' | 'pdf' | 'image' | 'audio' | 'article' | 'social' | 'unknown';
   captureKind?: ItemCaptureKind;
 };
 
@@ -156,6 +160,7 @@ export function buildPreviewMetadata({
 
   if (url) {
     metadata.sourceUrl = url;
+    metadata.previewUrl = url;
   }
 
   if (title) {

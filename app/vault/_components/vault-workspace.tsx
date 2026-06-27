@@ -119,6 +119,66 @@ const captureCopy: Record<
   },
 };
 
+const captureSupport: Record<
+  Exclude<VaultTab, 'Overview' | 'Bookmarks' | 'Trash' | 'Chat' | 'Guide'>,
+  {
+    links?: string[];
+    files?: string[];
+  }
+> = {
+  Articles: {
+    links: ['News sites', 'Blogs', 'Docs pages', 'Medium', 'Substack'],
+  },
+  Videos: {
+    links: ['YouTube', 'Vimeo', 'Dailymotion', 'Loom', 'Wistia', 'Google Drive video links'],
+    files: ['MP4', 'WEBM', 'MOV', 'M4V', 'OGG'],
+  },
+  PDFs: {
+    links: ['Direct PDF links', 'arXiv', 'Research papers', 'Docs links'],
+    files: ['PDF'],
+  },
+  Images: {
+    links: ['Image URLs', 'Reference pages'],
+    files: ['PNG', 'JPG', 'JPEG', 'WEBP', 'GIF'],
+  },
+  'Social Links': {
+    links: ['X / Twitter', 'LinkedIn', 'Instagram', 'Threads', 'Facebook post links'],
+  },
+  'Voice Notes': {
+    files: ['MP3', 'M4A', 'WAV', 'WEBM', 'OGG'],
+  },
+};
+
+function CaptureSupportHint({
+  support,
+}: {
+  support?: {
+    links?: string[];
+    files?: string[];
+  };
+}) {
+  if (!support || (!support.links?.length && !support.files?.length)) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2 text-[10px] leading-relaxed text-neutral-500">
+      {support.links?.length ? (
+        <p>
+          <span className="font-bold uppercase tracking-[0.18em] text-neutral-400">Supported links:</span>{' '}
+          {support.links.join(', ')}
+        </p>
+      ) : null}
+      {support.files?.length ? (
+        <p>
+          <span className="font-bold uppercase tracking-[0.18em] text-neutral-400">Supported formats:</span>{' '}
+          {support.files.join(', ')}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function getSupportedAudioMimeType() {
   if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
     return '';
@@ -215,6 +275,7 @@ export function VaultWorkspace({ identity, initialItems = [], initialChatSession
   const compactMode = preferences?.compactMode ?? false;
   const avatarLetter = displayName.charAt(0).toUpperCase() || 'V';
   const activeCaptureCopy = captureCopy[captureType];
+  const activeCaptureSupport = captureSupport[captureType];
   const currentSectionLabel =
     currentTab === 'Overview'
       ? 'Knowledge Workspace'
@@ -1925,6 +1986,8 @@ export function VaultWorkspace({ identity, initialItems = [], initialChatSession
                     ))}
                   </div>
                 </div>
+
+                <CaptureSupportHint support={activeCaptureSupport} />
 
                 {captureType === 'PDFs' ? (
                   <div className="space-y-4">

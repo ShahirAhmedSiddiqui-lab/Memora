@@ -7,140 +7,7 @@ import { motion } from 'motion/react';
 import { Bookmark, BookOpen, ExternalLink, ImageIcon, Layers, LoaderCircle, Maximize2, Minimize2, Play, RefreshCw, RotateCcw, Trash2, Volume2, X } from 'lucide-react';
 import { KnowledgeItem } from '@/lib/db';
 import { cn } from '@/lib/utils';
-
-type VideoPreview =
-  | { kind: 'file'; src: string; mimeType?: string; poster?: string }
-  | { kind: 'embed'; src: string; title: string }
-  | { kind: 'thumbnail'; src: string; alt: string }
-  | { kind: 'placeholder' };
-
-const DIRECT_VIDEO_EXTENSIONS = new Set(['.mp4', '.webm', '.ogg', '.mov', '.m4v']);
-
-function resolveVideoPreview(item: KnowledgeItem): VideoPreview {
-  const fileMime = item.fileMime || item.previewMetadata?.mimeType;
-  const thumbnailUrl = item.previewMetadata?.thumbnailUrl;
-
-  if (item.fileUrl && isDirectVideoFile(item.fileUrl, fileMime)) {
-    return {
-      kind: 'file',
-      src: item.fileUrl,
-      mimeType: fileMime,
-      poster: thumbnailUrl,
-    };
-  }
-
-  const sourceUrl = item.url || item.previewMetadata?.sourceUrl;
-  if (!sourceUrl) {
-    return thumbnailUrl
-      ? { kind: 'thumbnail', src: thumbnailUrl, alt: item.title }
-      : { kind: 'placeholder' };
-  }
-
-  if (isDirectVideoFile(sourceUrl, fileMime)) {
-    return {
-      kind: 'file',
-      src: sourceUrl,
-      mimeType: fileMime,
-      poster: thumbnailUrl,
-    };
-  }
-
-  const embedUrl = getVideoEmbedUrl(sourceUrl);
-  if (embedUrl) {
-    return {
-      kind: 'embed',
-      src: embedUrl,
-      title: item.title || 'Video preview',
-    };
-  }
-
-  return thumbnailUrl
-    ? { kind: 'thumbnail', src: thumbnailUrl, alt: item.title }
-    : { kind: 'placeholder' };
-}
-
-function isDirectVideoFile(url: string, mimeType?: string) {
-  if (mimeType?.startsWith('video/')) {
-    return true;
-  }
-
-  try {
-    const parsedUrl = new URL(url);
-    const pathname = parsedUrl.pathname.toLowerCase();
-    return Array.from(DIRECT_VIDEO_EXTENSIONS).some((extension) => pathname.endsWith(extension));
-  } catch {
-    return false;
-  }
-}
-
-function getVideoEmbedUrl(url: string) {
-  try {
-    const parsedUrl = new URL(url);
-    const hostname = parsedUrl.hostname.toLowerCase();
-    const pathnameSegments = parsedUrl.pathname.split('/').filter(Boolean);
-
-    if (hostname.includes('youtu.be')) {
-      const videoId = pathnameSegments[0];
-      return videoId ? `https://www.youtube-nocookie.com/embed/${videoId}` : null;
-    }
-
-    if (hostname.includes('youtube.com')) {
-      if (parsedUrl.pathname === '/watch') {
-        const videoId = parsedUrl.searchParams.get('v');
-        return videoId ? `https://www.youtube-nocookie.com/embed/${videoId}` : null;
-      }
-
-      if (parsedUrl.pathname.startsWith('/shorts/') || parsedUrl.pathname.startsWith('/embed/')) {
-        const videoId = pathnameSegments[1];
-        return videoId ? `https://www.youtube-nocookie.com/embed/${videoId}` : null;
-      }
-    }
-
-    if (hostname.includes('vimeo.com')) {
-      const videoId = pathnameSegments.find((segment) => /^\d+$/.test(segment));
-      return videoId ? `https://player.vimeo.com/video/${videoId}` : null;
-    }
-
-    if (hostname.includes('loom.com')) {
-      const videoId = pathnameSegments[pathnameSegments.length - 1];
-      return videoId ? `https://www.loom.com/embed/${videoId}` : null;
-    }
-
-    if (hostname === 'dai.ly') {
-      const videoId = pathnameSegments[0];
-      return videoId ? `https://www.dailymotion.com/embed/video/${videoId}` : null;
-    }
-
-    if (hostname.includes('dailymotion.com')) {
-      if (parsedUrl.pathname.startsWith('/embed/video/')) {
-        return url;
-      }
-
-      const videoId = pathnameSegments[pathnameSegments.length - 1];
-      return videoId ? `https://www.dailymotion.com/embed/video/${videoId}` : null;
-    }
-
-    if (hostname.includes('wistia.com')) {
-      const mediaIndex = pathnameSegments.findIndex((segment) => segment === 'medias');
-      const videoId = mediaIndex >= 0 ? pathnameSegments[mediaIndex + 1] : null;
-      return videoId ? `https://fast.wistia.net/embed/iframe/${videoId}` : null;
-    }
-
-    if (hostname.includes('fast.wistia.net') && parsedUrl.pathname.includes('/embed/iframe/')) {
-      return url;
-    }
-
-    if (hostname.includes('drive.google.com')) {
-      const fileIndex = pathnameSegments.findIndex((segment) => segment === 'd');
-      const fileId = fileIndex >= 0 ? pathnameSegments[fileIndex + 1] : null;
-      return fileId ? `https://drive.google.com/file/d/${fileId}/preview` : null;
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
-}
+import { resolveItemPreviewPortal } from '@/lib/vault/preview';
 
 type VaultDetailPanelProps = {
   currentItem?: KnowledgeItem;
@@ -185,7 +52,7 @@ export function VaultDetailPanel({
     return null;
   }
 
-  const videoPreview = currentItem.type === 'Videos' ? resolveVideoPreview(currentItem) : null;
+  const previewPortal = resolveItemPreviewPortal(currentItem);
 
   return (
     <motion.div
@@ -357,23 +224,23 @@ export function VaultDetailPanel({
             <div className="space-y-2">
               <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
                 <div className="relative aspect-video w-full bg-neutral-100">
-                  {videoPreview?.kind === 'file' && (
+                  {previewPortal.kind === 'video-file' && (
                     <video
-                      src={videoPreview.src}
-                      poster={videoPreview.poster}
+                      src={previewPortal.src}
+                      poster={previewPortal.poster}
                       className="h-full w-full bg-black"
                       controls
                       playsInline
                       preload="metadata"
                     >
-                      {videoPreview.mimeType ? <source src={videoPreview.src} type={videoPreview.mimeType} /> : null}
+                      {previewPortal.mimeType ? <source src={previewPortal.src} type={previewPortal.mimeType} /> : null}
                     </video>
                   )}
 
-                  {videoPreview?.kind === 'embed' && (
+                  {previewPortal.kind === 'video-embed' && (
                     <iframe
-                      src={videoPreview.src}
-                      title={videoPreview.title}
+                      src={previewPortal.src}
+                      title={previewPortal.title}
                       className="h-full w-full"
                       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                       allowFullScreen
@@ -381,26 +248,29 @@ export function VaultDetailPanel({
                     />
                   )}
 
-                  {videoPreview?.kind === 'thumbnail' && (
+                  {previewPortal.kind === 'external' && (
                     <div className="relative h-full w-full">
                       <img
-                        src={videoPreview.src}
-                        alt={videoPreview.alt}
+                        src={previewPortal.thumbnailUrl || currentItem.previewMetadata?.thumbnailUrl || currentItem.imageUrl || ''}
+                        alt={previewPortal.alt}
                         className="h-full w-full object-cover"
                         referrerPolicy="no-referrer"
                       />
                       <div className="absolute inset-0 flex items-center justify-center bg-neutral-950/35">
                         <div className="flex items-center gap-2 rounded-full bg-white/92 px-3 py-1.5 text-[11px] font-semibold text-neutral-900 shadow-sm">
                           <Play className="h-3.5 w-3.5 fill-current" />
-                          <span>Open externally to play</span>
+                          <span>{previewPortal.label}</span>
                         </div>
                       </div>
                     </div>
                   )}
 
-                  {videoPreview?.kind === 'placeholder' && (
+                  {previewPortal.kind === 'placeholder' && (
                     <div className="flex h-full w-full items-center justify-center bg-neutral-950 text-white">
-                      <Play className="h-8 w-8" />
+                      <div className="flex flex-col items-center gap-2 text-center">
+                        <Play className="h-8 w-8" />
+                        <span className="text-xs text-neutral-200">{previewPortal.label}</span>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -421,11 +291,11 @@ export function VaultDetailPanel({
 
           {currentItem.type === 'PDFs' && (
             <div className="space-y-2">
-              {currentItem.fileUrl ? (
+              {previewPortal.kind === 'pdf-file' ? (
                 <div className="space-y-2">
                   <div className="rounded-lg border border-neutral-200 shadow-sm bg-white overflow-hidden">
-                    <object data={`${currentItem.fileUrl}#toolbar=0&navpanes=0&scrollbar=1`} type="application/pdf" className="w-full h-[28rem] bg-neutral-50">
-                      <iframe src={`${currentItem.fileUrl}#toolbar=0&navpanes=0&scrollbar=1`} className="w-full h-[28rem] bg-white" title="PDF Document Viewer" />
+                    <object data={`${previewPortal.src}#toolbar=0&navpanes=0&scrollbar=1`} type="application/pdf" className="w-full h-[28rem] bg-neutral-50">
+                      <iframe src={`${previewPortal.src}#toolbar=0&navpanes=0&scrollbar=1`} className="w-full h-[28rem] bg-white" title="PDF Document Viewer" />
                     </object>
                   </div>
                   <div className="flex justify-between items-center pt-1 border-t border-neutral-100">
@@ -439,13 +309,28 @@ export function VaultDetailPanel({
                         Fullscreen preview
                       </button>
                       <a
-                        href={currentItem.fileUrl}
+                        href={previewPortal.src}
                         download={currentItem.fileName || 'knowledge-paper.pdf'}
                         className="text-[9px] font-mono hover:underline font-bold text-neutral-900"
                       >
                         Download file
                       </a>
                     </div>
+                  </div>
+                </div>
+              ) : previewPortal.kind === 'card' ? (
+                <div className="space-y-3 rounded-lg border border-neutral-200 bg-white p-3">
+                  {previewPortal.thumbnailUrl ? (
+                    <img
+                      src={previewPortal.thumbnailUrl}
+                      alt={previewPortal.title || currentItem.title}
+                      className="h-44 w-full rounded-lg object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : null}
+                  <div className="space-y-1">
+                    <div className="text-xs font-semibold text-neutral-900">{previewPortal.title || currentItem.title}</div>
+                    <p className="text-[11px] leading-relaxed text-neutral-600">{previewPortal.description || currentItem.content}</p>
                   </div>
                 </div>
               ) : (
@@ -462,10 +347,10 @@ export function VaultDetailPanel({
 
           {currentItem.type === 'Voice Notes' && (
             <div className="space-y-2">
-              {currentItem.fileUrl ? (
+              {previewPortal.kind === 'audio' ? (
                 <div className="space-y-2">
                   <div className="p-3 bg-white border border-neutral-200 rounded-lg flex flex-col justify-center">
-                    <audio ref={audioRef} src={currentItem.fileUrl} controls className="w-full h-8 accent-neutral-900" />
+                    <audio ref={audioRef} src={previewPortal.src} controls className="w-full h-8 accent-neutral-900" />
                     <span className="text-[8px] font-mono text-neutral-400 mt-1.5 text-center block">
                       Recorded Speech Transcription (Active Speed: {voiceSpeed}x)
                     </span>
@@ -492,26 +377,26 @@ export function VaultDetailPanel({
 
           {currentItem.type === 'Articles' && (
             <div className="space-y-2">
-              {currentItem.previewMetadata?.thumbnailUrl && (
+              {previewPortal.kind === 'card' && previewPortal.thumbnailUrl && (
                 <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
                   <img
-                    src={currentItem.previewMetadata.thumbnailUrl}
-                    alt={currentItem.previewMetadata.title || currentItem.title}
+                    src={previewPortal.thumbnailUrl}
+                    alt={previewPortal.title || currentItem.title}
                     className="h-52 w-full object-cover"
                     referrerPolicy="no-referrer"
                   />
                 </div>
               )}
-              {(currentItem.previewMetadata?.title || currentItem.previewMetadata?.description) && (
+              {previewPortal.kind === 'card' && (previewPortal.title || previewPortal.description) && (
                 <div className="rounded-lg border border-neutral-200 bg-white p-3 text-left">
                   <div className="text-[9px] font-bold font-mono uppercase tracking-wider text-neutral-400">
                     Article Preview
                   </div>
-                  {currentItem.previewMetadata?.title && (
-                    <div className="mt-1 text-xs font-semibold text-neutral-900">{currentItem.previewMetadata.title}</div>
+                  {previewPortal.title && (
+                    <div className="mt-1 text-xs font-semibold text-neutral-900">{previewPortal.title}</div>
                   )}
-                  {currentItem.previewMetadata?.description && (
-                    <p className="mt-1 text-[11px] leading-relaxed text-neutral-600">{currentItem.previewMetadata.description}</p>
+                  {previewPortal.description && (
+                    <p className="mt-1 text-[11px] leading-relaxed text-neutral-600">{previewPortal.description}</p>
                   )}
                 </div>
               )}
@@ -532,11 +417,11 @@ export function VaultDetailPanel({
 
           {currentItem.type === 'Social Links' && (
             <div className="space-y-2">
-              {currentItem.previewMetadata?.thumbnailUrl && (
+              {previewPortal.kind === 'card' && previewPortal.thumbnailUrl && (
                 <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
                   <img
-                    src={currentItem.previewMetadata.thumbnailUrl}
-                    alt={currentItem.previewMetadata.title || currentItem.title}
+                    src={previewPortal.thumbnailUrl}
+                    alt={previewPortal.title || currentItem.title}
                     className="h-52 w-full object-cover"
                     referrerPolicy="no-referrer"
                   />
@@ -549,18 +434,18 @@ export function VaultDetailPanel({
                   </div>
                   <div>
                     <div className="text-[10px] font-bold truncate max-w-[180px]">
-                      {currentItem.previewMetadata?.authorName || currentItem.author || currentItem.source || 'Social Media Link'}
+                      {previewPortal.kind === 'card' ? previewPortal.authorName || currentItem.author || currentItem.source || 'Social Media Link' : currentItem.author || currentItem.source || 'Social Media Link'}
                     </div>
                     <div className="text-[8px] text-neutral-400 font-mono">
-                      {currentItem.previewMetadata?.provider || 'Social Feed Archive'}
+                      {previewPortal.kind === 'card' ? previewPortal.provider || 'Social Feed Archive' : currentItem.previewMetadata?.provider || 'Social Feed Archive'}
                     </div>
                   </div>
                 </div>
-                {currentItem.previewMetadata?.title && (
-                  <div className="text-xs font-semibold leading-relaxed text-white">{currentItem.previewMetadata.title}</div>
+                {previewPortal.kind === 'card' && previewPortal.title && (
+                  <div className="text-xs font-semibold leading-relaxed text-white">{previewPortal.title}</div>
                 )}
-                {currentItem.previewMetadata?.description ? (
-                  <p className="text-xs leading-relaxed font-sans italic text-neutral-200">{currentItem.previewMetadata.description}</p>
+                {previewPortal.kind === 'card' && previewPortal.description ? (
+                  <p className="text-xs leading-relaxed font-sans italic text-neutral-200">{previewPortal.description}</p>
                 ) : (
                   <p className="text-xs leading-relaxed font-sans italic text-neutral-200">&ldquo;{currentItem.content}&rdquo;</p>
                 )}
@@ -584,19 +469,19 @@ export function VaultDetailPanel({
 
           {currentItem.type === 'Images' && (
             <div className="space-y-2">
-              {currentItem.fileUrl ? (
+              {previewPortal.kind === 'image' ? (
                 <div className="space-y-2">
                   <div className="rounded-lg overflow-hidden border border-neutral-200 bg-white">
                     <img
-                      src={currentItem.fileUrl}
-                      alt={currentItem.title}
+                      src={previewPortal.src}
+                      alt={previewPortal.alt}
                       className="w-full max-h-72 object-contain bg-neutral-50"
                     />
                   </div>
                   <div className="flex justify-between items-center pt-1 border-t border-neutral-100">
                     <span className="text-[9px] text-neutral-400 font-mono">Private image capture</span>
                     <a
-                      href={currentItem.fileUrl}
+                      href={previewPortal.src}
                       target="_blank"
                       rel="noreferrer"
                       className="text-[9px] font-mono hover:underline font-bold text-neutral-900"
@@ -673,7 +558,7 @@ export function VaultDetailPanel({
         </div>
       </div>
 
-      {currentItem.type === 'PDFs' && currentItem.fileUrl && isPdfPreviewOpen && (
+      {currentItem.type === 'PDFs' && previewPortal.kind === 'pdf-file' && isPdfPreviewOpen && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-neutral-950/80 p-4">
           <div className="relative flex h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-neutral-800 bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3">
@@ -683,7 +568,7 @@ export function VaultDetailPanel({
               </div>
               <div className="flex items-center gap-3">
                 <a
-                  href={currentItem.fileUrl}
+                  href={previewPortal.src}
                   download={currentItem.fileName || 'knowledge-paper.pdf'}
                   className="text-[10px] font-mono font-bold text-neutral-700 hover:text-neutral-950"
                 >
@@ -700,8 +585,8 @@ export function VaultDetailPanel({
               </div>
             </div>
             <div className="flex-1 bg-neutral-100">
-              <object data={`${currentItem.fileUrl}#toolbar=1&navpanes=0&scrollbar=1`} type="application/pdf" className="h-full w-full">
-                <iframe src={`${currentItem.fileUrl}#toolbar=1&navpanes=0&scrollbar=1`} className="h-full w-full bg-white" title="Fullscreen PDF Preview" />
+              <object data={`${previewPortal.src}#toolbar=1&navpanes=0&scrollbar=1`} type="application/pdf" className="h-full w-full">
+                <iframe src={`${previewPortal.src}#toolbar=1&navpanes=0&scrollbar=1`} className="h-full w-full bg-white" title="Fullscreen PDF Preview" />
               </object>
             </div>
           </div>

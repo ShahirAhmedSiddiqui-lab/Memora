@@ -134,6 +134,18 @@ function normalizePreviewMetadata(value: unknown): ItemPreviewMetadata | undefin
     previewMetadata.sourceUrl = metadata.sourceUrl;
   }
 
+  if (typeof metadata.previewUrl === 'string') {
+    previewMetadata.previewUrl = metadata.previewUrl;
+  }
+
+  if (typeof metadata.embedUrl === 'string') {
+    previewMetadata.embedUrl = metadata.embedUrl;
+  }
+
+  if (typeof metadata.canonicalUrl === 'string') {
+    previewMetadata.canonicalUrl = metadata.canonicalUrl;
+  }
+
   if (typeof metadata.title === 'string') {
     previewMetadata.title = metadata.title;
   }
@@ -156,6 +168,10 @@ function normalizePreviewMetadata(value: unknown): ItemPreviewMetadata | undefin
 
   if (typeof metadata.byteSize === 'number') {
     previewMetadata.byteSize = metadata.byteSize;
+  }
+
+  if (typeof metadata.mediaKind === 'string') {
+    previewMetadata.mediaKind = metadata.mediaKind as ItemPreviewMetadata['mediaKind'];
   }
 
   if (typeof metadata.captureKind === 'string') {
