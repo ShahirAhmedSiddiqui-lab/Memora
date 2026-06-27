@@ -1,12 +1,12 @@
 'use client';
 
 import * as React from 'react';
+import { toast } from 'sonner';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertTriangle,
   BookOpen,
   Bot,
-  CheckCircle,
   FileText,
   Globe,
   ImageIcon,
@@ -252,7 +252,6 @@ export function VaultWorkspace({ identity, initialItems = [], initialChatSession
   const [localAskLoading, setLocalAskLoading] = React.useState(false);
   const [flippedCardId, setFlippedCardId] = React.useState<string | null>(null);
   const [isSendingChat, setIsSendingChat] = React.useState(false);
-  const [notification, setNotification] = React.useState<string | null>(null);
   const [confirmDialog, setConfirmDialog] = React.useState<ConfirmDialogState | null>(null);
   const [filterReferenceTime] = React.useState(() => Date.now());
   const [isDetailPanelOpen, setIsDetailPanelOpen] = React.useState(true);
@@ -361,8 +360,7 @@ export function VaultWorkspace({ identity, initialItems = [], initialChatSession
   }, []);
 
   const showToast = React.useCallback((message: string) => {
-    setNotification(message);
-    setTimeout(() => setNotification(null), 3000);
+    toast.success(message);
   }, []);
 
   const requestConfirmation = React.useCallback((options: ConfirmDialogState) => {
@@ -1288,20 +1286,6 @@ export function VaultWorkspace({ identity, initialItems = [], initialChatSession
       transition={{ duration: 0.35, ease: 'easeOut' }}
       className="h-screen overflow-hidden bg-[#fafafc] text-neutral-800 font-sans relative antialiased flex flex-row"
     >
-      <AnimatePresence>
-        {notification && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9, y: 15 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 15 }}
-            className="fixed bottom-6 right-6 z-50 bg-neutral-900 text-white px-4 py-3 rounded-xl text-xs font-medium shadow-xl flex items-center space-x-2.5 border border-neutral-800/50"
-          >
-            <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span>{notification}</span>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {isSidebarOpen && (
         <div className="fixed inset-0 bg-neutral-900/10 backdrop-blur-3xs z-30 md:hidden" onClick={() => setIsSidebarOpen(false)} />
       )}
