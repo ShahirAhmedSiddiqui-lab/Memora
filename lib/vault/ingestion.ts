@@ -289,11 +289,30 @@ async function prepareItemDraft(input: ItemDraftInput): Promise<PreparedDraft> {
     initialTitle,
     initialSource,
     storedContent,
-    extractedText: content?.trim() || remotePreview?.extractedText,
+    extractedText: content?.trim() || remotePreview?.extractedText || buildRemotePreviewSeedText(remotePreview, url),
     initialImageUrl: itemType === 'Images'
       ? ''
       : previewMetadata.thumbnailUrl || getDefaultPreviewImage(itemType),
   };
+}
+
+function buildRemotePreviewSeedText(remotePreview: RemotePreviewData | null, url?: string) {
+  if (!remotePreview && !url) {
+    return undefined;
+  }
+
+  const seeded = [
+    remotePreview?.title ? `Title: ${remotePreview.title}` : '',
+    remotePreview?.description ? `Description: ${remotePreview.description}` : '',
+    remotePreview?.authorName ? `Author: ${remotePreview.authorName}` : '',
+    remotePreview?.provider ? `Provider: ${remotePreview.provider}` : '',
+    remotePreview?.mediaKind ? `Media type: ${remotePreview.mediaKind}` : '',
+    remotePreview?.canonicalUrl || url ? `Source URL: ${remotePreview?.canonicalUrl || url}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  return seeded || undefined;
 }
 
 async function insertPendingItem(

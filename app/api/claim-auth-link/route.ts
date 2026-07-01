@@ -18,6 +18,7 @@ export async function POST(req: NextRequest) {
       minLength: 1,
       maxLength: 32,
     });
+    const mode = typeof body.mode === 'string' ? body.mode.trim().toLowerCase() : 'claim';
 
     if (linkType !== 'confirmation' && linkType !== 'recovery') {
       throw new ApiRouteError(400, 'Link type is invalid.', {
@@ -25,8 +26,35 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    if (mode !== 'claim' && mode !== 'check') {
+      throw new ApiRouteError(400, 'Claim mode is invalid.', {
+        code: 'validation_error',
+      });
+    }
+
     const supabase = await createClient();
     const hashedFingerprint = createHash('sha256').update(fingerprint).digest('hex');
+
+    if (mode === 'check') {
+      const { data, error } = await supabase
+        .from('auth_link_consumption')
+        .select('link_hash')
+        .eq('link_hash', hashedFingerprint)
+        .eq('link_type', linkType)
+        .maybeSingle();
+
+      if (error) {
+        throw new ApiRouteError(500, 'Unable to validate auth link right now.', {
+          code: 'auth_link_check_failed',
+          cause: error,
+        });
+      }
+
+      return apiSuccess({
+        claimed: Boolean(data),
+      });
+    }
+
     const { error } = await supabase.from('auth_link_consumption').insert({
       link_hash: hashedFingerprint,
       link_type: linkType,

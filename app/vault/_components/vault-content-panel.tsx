@@ -495,7 +495,7 @@ export function VaultContentPanel({
                 </div>
               </div>
 
-              <div className="space-y-1.5">
+              <div className="min-w-0 space-y-1.5">
                 <h3 className={cn('font-bold text-neutral-900 leading-snug line-clamp-2', compactMode ? 'text-[11px]' : 'text-xs')}>{item.title}</h3>
                 <p className="text-neutral-500 text-[11px] leading-relaxed line-clamp-3">
                   {item.previewMetadata?.description && (item.type === 'Articles' || item.type === 'Social Links')
@@ -522,8 +522,8 @@ export function VaultContentPanel({
                 </div>
               )}
 
-              <div className="flex flex-wrap items-center gap-1.5 pt-4 mt-auto border-t border-neutral-105/10">
-                <span className="text-[10px] text-neutral-400 font-mono tracking-wide uppercase">{metaLabel}</span>
+              <div className="mt-auto flex flex-wrap items-center gap-1.5 border-t border-neutral-105/10 pt-4">
+                <span className="line-clamp-2 break-words text-[10px] text-neutral-400 font-mono tracking-wide uppercase">{metaLabel}</span>
               </div>
             </motion.div>
           );

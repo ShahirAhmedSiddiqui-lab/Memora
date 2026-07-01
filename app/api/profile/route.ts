@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ApiRouteError, apiSuccess, handleApiRouteError, unauthorized } from '@/lib/api/errors';
+import { ApiRouteError, apiSuccess, handleApiRouteError } from '@/lib/api/errors';
+import { requireApiUser } from '@/lib/api/auth';
 import { ensureObject, readJsonBody, readOptionalBoolean, readOptionalObject, readOptionalString } from '@/lib/api/validation';
 import { createClient } from '@/lib/supabase/server';
 import { getFileExtension } from '@/lib/vault/items';
@@ -32,13 +33,7 @@ type AvatarFileData = {
 export async function GET() {
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return unauthorized();
-    }
+    const user = await requireApiUser(supabase);
 
     const profile = await getOrCreateProfile(supabase, user);
     const avatarUrl = profile.avatar_path
@@ -54,13 +49,7 @@ export async function GET() {
 export async function PATCH(req: NextRequest) {
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return unauthorized();
-    }
+    const user = await requireApiUser(supabase);
 
     const body = ensureObject(await readJsonBody(req));
     const existingProfile = await getOrCreateProfile(supabase, user);

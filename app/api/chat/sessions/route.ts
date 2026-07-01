@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { apiSuccess, handleApiRouteError, unauthorized } from '@/lib/api/errors';
+import { apiSuccess, handleApiRouteError } from '@/lib/api/errors';
+import { requireApiUser } from '@/lib/api/auth';
 import { ensureObject, readJsonBody, readOptionalBoolean, readOptionalString } from '@/lib/api/validation';
 import { createClient } from '@/lib/supabase/server';
 import { createChatSession, getOrCreateLatestChatSession, listChatSessions } from '@/lib/vault/chat';
@@ -7,13 +8,7 @@ import { createChatSession, getOrCreateLatestChatSession, listChatSessions } fro
 export async function GET() {
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return unauthorized();
-    }
+    const user = await requireApiUser(supabase);
 
     const sessions = await listChatSessions(supabase, user.id);
     return apiSuccess(sessions);
@@ -25,13 +20,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return unauthorized();
-    }
+    const user = await requireApiUser(supabase);
 
     const body = ensureObject(await readJsonBody(req));
     const title = readOptionalString(body.title, {

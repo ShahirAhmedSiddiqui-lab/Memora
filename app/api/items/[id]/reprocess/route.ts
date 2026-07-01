@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
-import { apiSuccess, handleApiRouteError, unauthorized } from '@/lib/api/errors';
+import { apiSuccess, handleApiRouteError } from '@/lib/api/errors';
+import { requireApiUser } from '@/lib/api/auth';
 import { enforceRateLimit } from '@/lib/api/rate-limit';
 import { readUuid } from '@/lib/api/validation';
 import { retryItemProcessing } from '@/lib/vault/ingestion';
@@ -9,13 +10,7 @@ import { mapKnowledgeItem, VAULT_BUCKET } from '@/lib/supabase/vault';
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return unauthorized();
-    }
+    const user = await requireApiUser(supabase);
 
     enforceRateLimit({
       key: `items:reprocess:${user.id}`,

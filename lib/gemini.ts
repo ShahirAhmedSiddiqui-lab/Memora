@@ -1,5 +1,6 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { KnowledgeItem, Flashcard } from './db';
+import { fetchSafeRemote } from '@/lib/network/safe-remote-fetch';
 
 const DEFAULT_PROCESSING_MODEL = 'gemini-3.1-flash-lite';
 const DEFAULT_CHAT_MODEL = 'gemma-4-31b';
@@ -794,16 +795,7 @@ async function fetchUrlContext(url: string, youtubeMetadata?: YouTubeMetadata | 
       }
     }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 MemoraBot/1.0',
-      },
-      cache: 'no-store',
-    });
-    clearTimeout(timeout);
+    const response = await fetchSafeRemote(url, { timeoutMs: 5000 });
 
     if (!response.ok) {
       return '';
@@ -829,17 +821,8 @@ async function fetchUrlContext(url: string, youtubeMetadata?: YouTubeMetadata | 
 
 async function fetchYouTubeMetadata(url: string): Promise<YouTubeMetadata | null> {
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
     const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
-    const response = await fetch(oembedUrl, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 MemoraBot/1.0',
-      },
-      cache: 'no-store',
-    });
-    clearTimeout(timeout);
+    const response = await fetchSafeRemote(oembedUrl, { timeoutMs: 5000 });
 
     if (!response.ok) {
       return null;

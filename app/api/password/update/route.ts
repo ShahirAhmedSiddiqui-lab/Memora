@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-import { ApiRouteError, apiSuccess, handleApiRouteError, unauthorized } from '@/lib/api/errors';
+import { ApiRouteError, apiSuccess, handleApiRouteError } from '@/lib/api/errors';
+import { requireApiUser } from '@/lib/api/auth';
 import { enforceRateLimit, getClientIp } from '@/lib/api/rate-limit';
 import { ensureObject, readJsonBody, readRequiredString } from '@/lib/api/validation';
 import { createClient } from '@/lib/supabase/server';
@@ -8,13 +9,7 @@ import { createClient } from '@/lib/supabase/server';
 export async function POST(req: NextRequest) {
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return unauthorized();
-    }
+    const user = await requireApiUser(supabase);
 
     enforceRateLimit({
       key: `auth:password-update:${user.id}:${getClientIp(req)}`,

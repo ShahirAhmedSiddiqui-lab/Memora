@@ -1,4 +1,5 @@
-import { apiSuccess, handleApiRouteError, unauthorized } from '@/lib/api/errors';
+import { apiSuccess, handleApiRouteError } from '@/lib/api/errors';
+import { requireApiUser } from '@/lib/api/auth';
 import { readUuid } from '@/lib/api/validation';
 import { createClient } from '@/lib/supabase/server';
 import { assertChatSessionOwnership } from '@/lib/vault/chat';
@@ -7,13 +8,7 @@ export async function DELETE(_: Request, context: { params: Promise<{ sessionId:
   try {
     const { sessionId } = await context.params;
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return unauthorized();
-    }
+    const user = await requireApiUser(supabase);
 
     const normalizedSessionId = readUuid(sessionId, 'Session id');
     await assertChatSessionOwnership(supabase, user.id, normalizedSessionId);

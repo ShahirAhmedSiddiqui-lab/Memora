@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ApiRouteError, apiSuccess, handleApiRouteError, unauthorized } from '@/lib/api/errors';
+import { ApiRouteError, apiSuccess, handleApiRouteError } from '@/lib/api/errors';
+import { requireApiUser } from '@/lib/api/auth';
 import { logApiEvent } from '@/lib/api/logging';
 import { enforceRateLimit } from '@/lib/api/rate-limit';
 import {
@@ -24,13 +25,7 @@ export async function GET(_: NextRequest, context: { params: Promise<{ sessionId
   try {
     const { sessionId } = await context.params;
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return unauthorized();
-    }
+    const user = await requireApiUser(supabase);
 
     const normalizedSessionId = readUuid(sessionId, 'Session id');
     const messages = await getChatMessages(supabase, user.id, normalizedSessionId);
@@ -44,13 +39,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ sessio
   try {
     const { sessionId } = await context.params;
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return unauthorized();
-    }
+    const user = await requireApiUser(supabase);
 
     enforceRateLimit({
       key: `chat:session:${user.id}`,
@@ -205,13 +194,7 @@ export async function DELETE(_: NextRequest, context: { params: Promise<{ sessio
   try {
     const { sessionId } = await context.params;
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return unauthorized();
-    }
+    const user = await requireApiUser(supabase);
 
     const normalizedSessionId = readUuid(sessionId, 'Session id');
     await assertChatSessionOwnership(supabase, user.id, normalizedSessionId);

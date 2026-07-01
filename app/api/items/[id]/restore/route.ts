@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
-import { ApiRouteError, apiSuccess, handleApiRouteError, unauthorized } from '@/lib/api/errors';
+import { ApiRouteError, apiSuccess, handleApiRouteError } from '@/lib/api/errors';
+import { requireApiUser } from '@/lib/api/auth';
 import { readUuid } from '@/lib/api/validation';
 import { createClient } from '@/lib/supabase/server';
 import { mapKnowledgeItem, VAULT_BUCKET } from '@/lib/supabase/vault';
@@ -8,13 +9,7 @@ import { getRestoredStatus } from '@/lib/vault/items';
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return unauthorized();
-    }
+    const user = await requireApiUser(supabase);
 
     const { id } = await params;
     const itemId = readUuid(id, 'Item id');

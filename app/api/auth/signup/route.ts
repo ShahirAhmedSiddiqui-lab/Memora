@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { type User } from '@supabase/supabase-js';
 import { apiSuccess, handleApiRouteError } from '@/lib/api/errors';
+import {
+  buildPendingSignupCookieValue,
+  getPendingSignupCookieOptions,
+  PENDING_SIGNUP_COOKIE,
+} from '@/lib/auth/pending-signup';
 import { logApiEvent } from '@/lib/api/logging';
 import { enforceRateLimit, getClientIp } from '@/lib/api/rate-limit';
 import { ensureObject, readEmail, readJsonBody, readOptionalString, readRequiredString } from '@/lib/api/validation';
@@ -54,24 +59,36 @@ export async function POST(req: NextRequest) {
         ip,
         code: 'signup_failed',
       });
-      return apiSuccess({
+      const response = apiSuccess({
         success: true,
         requiresEmailConfirmation: true,
         message: 'If this email can be used for signup, check your inbox for the next step. If you already have an account, try logging in.',
         user: null,
       });
+      response.cookies.set(
+        PENDING_SIGNUP_COOKIE,
+        buildPendingSignupCookieValue(normalizedEmail),
+        getPendingSignupCookieOptions()
+      );
+      return response;
     }
 
     if (isExistingSignupAttempt(data.user)) {
-      return apiSuccess({
+      const response = apiSuccess({
         success: true,
         requiresEmailConfirmation: true,
         message: 'If this email can be used for signup, check your inbox for the next step. If you already have an account, try logging in.',
         user: null,
       });
+      response.cookies.set(
+        PENDING_SIGNUP_COOKIE,
+        buildPendingSignupCookieValue(normalizedEmail),
+        getPendingSignupCookieOptions()
+      );
+      return response;
     }
 
-    return apiSuccess({
+    const response = apiSuccess({
       success: true,
       requiresEmailConfirmation: !data.session,
       message: data.session
@@ -84,6 +101,14 @@ export async function POST(req: NextRequest) {
           }
         : null,
     });
+    if (!data.session) {
+      response.cookies.set(
+        PENDING_SIGNUP_COOKIE,
+        buildPendingSignupCookieValue(normalizedEmail),
+        getPendingSignupCookieOptions()
+      );
+    }
+    return response;
   } catch (error) {
     return handleApiRouteError(error, 'auth.signup', {
       ip: getClientIp(req),

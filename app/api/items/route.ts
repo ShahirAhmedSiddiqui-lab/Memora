@@ -1,5 +1,6 @@
 import { after, NextRequest, NextResponse } from 'next/server';
-import { ApiRouteError, apiSuccess, handleApiRouteError, unauthorized } from '@/lib/api/errors';
+import { ApiRouteError, apiSuccess, handleApiRouteError } from '@/lib/api/errors';
+import { requireApiUser } from '@/lib/api/auth';
 import { logApiEvent } from '@/lib/api/logging';
 import { enforceRateLimit, getClientIp } from '@/lib/api/rate-limit';
 import {
@@ -18,13 +19,7 @@ const ALLOWED_PROCESSING_STATUSES = ['pending', 'ready', 'failed', 'trashed'] as
 export async function GET(req: NextRequest) {
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return unauthorized();
-    }
+    const user = await requireApiUser(supabase);
 
     const { searchParams } = new URL(req.url);
     const type = searchParams.get('type');
@@ -87,13 +82,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return unauthorized();
-    }
+    const user = await requireApiUser(supabase);
 
     enforceRateLimit({
       key: `items:create:${user.id}`,

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiSuccess, handleApiRouteError } from '@/lib/api/errors';
+import { isPendingSignupEmailMatch, PENDING_SIGNUP_COOKIE } from '@/lib/auth/pending-signup';
 import { logApiEvent } from '@/lib/api/logging';
 import { enforceRateLimit, getClientIp } from '@/lib/api/rate-limit';
 import { ensureObject, readEmail, readJsonBody } from '@/lib/api/validation';
@@ -11,6 +12,7 @@ export async function POST(req: NextRequest) {
     const body = ensureObject(await readJsonBody(req));
     const normalizedEmail = readEmail(body.email, 'Email');
     const ip = getClientIp(req);
+    const pendingSignupEmail = req.cookies.get(PENDING_SIGNUP_COOKIE)?.value;
 
     enforceRateLimit({
       key: `auth:forgot-password:${ip}:${normalizedEmail}`,
@@ -19,6 +21,13 @@ export async function POST(req: NextRequest) {
       message: 'Too many reset requests. Please wait a minute and try again.',
       code: 'password_reset_rate_limited',
     });
+
+    if (isPendingSignupEmailMatch(pendingSignupEmail, normalizedEmail)) {
+      return apiSuccess({
+        success: true,
+        message: 'Confirm your email and log in once before using password reset for this new account.',
+      });
+    }
 
     const supabase = await createClient();
     const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {

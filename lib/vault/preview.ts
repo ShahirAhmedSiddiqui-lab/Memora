@@ -1,5 +1,5 @@
 import { type KnowledgeItem } from '@/lib/db';
-import { inferPreviewFromUrl } from '@/lib/vault/extraction';
+import { inferPreviewFromUrl } from '@/lib/vault/preview-inference';
 
 export type ItemPreviewPortal =
   | { kind: 'video-file'; src: string; mimeType?: string; poster?: string }
@@ -8,12 +8,14 @@ export type ItemPreviewPortal =
   | { kind: 'image'; src: string; alt: string }
   | { kind: 'audio'; src: string; mimeType?: string }
   | { kind: 'card'; title?: string; description?: string; thumbnailUrl?: string; provider?: string; authorName?: string }
-  | { kind: 'external'; label: string; thumbnailUrl?: string; alt: string }
+  | { kind: 'external'; label: string; thumbnailUrl?: string; alt: string; openUrl?: string }
   | { kind: 'placeholder'; label: string };
 
 export function resolveItemPreviewPortal(item: KnowledgeItem): ItemPreviewPortal {
   const previewMetadata = item.previewMetadata;
   const sourceUrl = item.url || previewMetadata?.sourceUrl;
+  const previewUrl = previewMetadata?.previewUrl || sourceUrl;
+  const embedUrl = previewMetadata?.embedUrl;
   const title = previewMetadata?.title || item.title;
   const description = previewMetadata?.description || item.extractedText || item.content;
   const provider = previewMetadata?.provider || item.source;
@@ -31,8 +33,16 @@ export function resolveItemPreviewPortal(item: KnowledgeItem): ItemPreviewPortal
       };
     }
 
-    if (sourceUrl) {
-      const inferred = inferPreviewFromUrl(sourceUrl);
+    if (embedUrl) {
+      return {
+        kind: 'video-embed',
+        src: embedUrl,
+        title: item.title || 'Video preview',
+      };
+    }
+
+    if (previewUrl) {
+      const inferred = inferPreviewFromUrl(previewUrl);
       if (inferred.embedUrl) {
         return {
           kind: 'video-embed',
@@ -56,6 +66,7 @@ export function resolveItemPreviewPortal(item: KnowledgeItem): ItemPreviewPortal
           label: 'Open externally to play',
           thumbnailUrl,
           alt: item.title,
+          openUrl: resolveItemOpenUrl(item),
         };
       }
     }
@@ -68,8 +79,8 @@ export function resolveItemPreviewPortal(item: KnowledgeItem): ItemPreviewPortal
       return { kind: 'pdf-file', src: item.fileUrl };
     }
 
-    if (sourceUrl) {
-      const inferred = inferPreviewFromUrl(sourceUrl);
+    if (previewUrl) {
+      const inferred = inferPreviewFromUrl(previewUrl);
       if (inferred.mediaKind === 'pdf' && inferred.previewUrl) {
         return { kind: 'pdf-file', src: inferred.previewUrl };
       }
@@ -90,8 +101,8 @@ export function resolveItemPreviewPortal(item: KnowledgeItem): ItemPreviewPortal
       return { kind: 'image', src: item.fileUrl, alt: item.title };
     }
 
-    if (sourceUrl) {
-      const inferred = inferPreviewFromUrl(sourceUrl);
+    if (previewUrl) {
+      const inferred = inferPreviewFromUrl(previewUrl);
       if (inferred.mediaKind === 'image' && inferred.previewUrl) {
         return { kind: 'image', src: inferred.previewUrl, alt: item.title };
       }
@@ -109,8 +120,8 @@ export function resolveItemPreviewPortal(item: KnowledgeItem): ItemPreviewPortal
       return { kind: 'audio', src: item.fileUrl, mimeType: fileMime };
     }
 
-    if (sourceUrl) {
-      const inferred = inferPreviewFromUrl(sourceUrl);
+    if (previewUrl) {
+      const inferred = inferPreviewFromUrl(previewUrl);
       if (inferred.mediaKind === 'audio' && inferred.previewUrl) {
         return { kind: 'audio', src: inferred.previewUrl, mimeType: fileMime };
       }
@@ -144,11 +155,37 @@ export function resolveItemPreviewPortal(item: KnowledgeItem): ItemPreviewPortal
         label: 'Open original source',
         thumbnailUrl,
         alt: item.title,
+        openUrl: resolveItemOpenUrl(item),
       };
     }
   }
 
   return { kind: 'placeholder', label: 'Preview unavailable' };
+}
+
+export function resolveItemOpenUrl(item: KnowledgeItem): string | undefined {
+  const previewMetadata = item.previewMetadata;
+
+  if (item.type === 'Videos') {
+    return (
+      item.url ||
+      previewMetadata?.sourceUrl ||
+      previewMetadata?.canonicalUrl ||
+      previewMetadata?.previewUrl ||
+      previewMetadata?.embedUrl ||
+      item.fileUrl
+    );
+  }
+
+  if (item.type === 'Articles' || item.type === 'Social Links') {
+    return item.url || previewMetadata?.sourceUrl || previewMetadata?.canonicalUrl || previewMetadata?.previewUrl;
+  }
+
+  if (item.type === 'PDFs' || item.type === 'Images' || item.type === 'Voice Notes') {
+    return item.fileUrl || item.url || previewMetadata?.sourceUrl || previewMetadata?.previewUrl;
+  }
+
+  return item.url || previewMetadata?.sourceUrl || previewMetadata?.canonicalUrl || previewMetadata?.previewUrl || item.fileUrl;
 }
 
 function isVideoFile(url: string) {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiSuccess, handleApiRouteError } from '@/lib/api/errors';
+import { getClearedPendingSignupCookieOptions, PENDING_SIGNUP_COOKIE } from '@/lib/auth/pending-signup';
 import { logApiEvent } from '@/lib/api/logging';
 import { enforceRateLimit, getClientIp } from '@/lib/api/rate-limit';
 import { ensureObject, readEmail, readJsonBody, readRequiredString } from '@/lib/api/validation';
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    return apiSuccess({
+    const response = apiSuccess({
       success: true,
       user: data.user
         ? {
@@ -56,6 +57,8 @@ export async function POST(req: NextRequest) {
           }
         : null,
     });
+    response.cookies.set(PENDING_SIGNUP_COOKIE, '', getClearedPendingSignupCookieOptions());
+    return response;
   } catch (error) {
     return handleApiRouteError(error, 'auth.login', {
       ip: getClientIp(req),

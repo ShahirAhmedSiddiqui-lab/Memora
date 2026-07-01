@@ -4,15 +4,16 @@
 
 import * as React from 'react';
 import { motion } from 'motion/react';
-import { Bookmark, BookOpen, ImageIcon, Layers, LoaderCircle, Maximize2, Minimize2, Play, RefreshCw, RotateCcw, Trash2, Volume2, X } from 'lucide-react';
+import { ArrowUpRight, Bookmark, BookOpen, ImageIcon, Layers, LoaderCircle, Maximize2, Minimize2, Play, RefreshCw, RotateCcw, Trash2, Volume2, X } from 'lucide-react';
 import { KnowledgeItem } from '@/lib/db';
 import { cn } from '@/lib/utils';
-import { resolveItemPreviewPortal } from '@/lib/vault/preview';
+import { resolveItemOpenUrl, resolveItemPreviewPortal } from '@/lib/vault/preview';
 
 type VaultDetailPanelProps = {
   currentItem?: KnowledgeItem;
   isTrashView: boolean;
   isFullscreen: boolean;
+  isMobile?: boolean;
   reduceMotion: boolean;
   flippedCardId: string | null;
   voiceSpeed: number;
@@ -32,6 +33,7 @@ export function VaultDetailPanel({
   currentItem,
   isTrashView,
   isFullscreen,
+  isMobile = false,
   reduceMotion,
   flippedCardId,
   voiceSpeed,
@@ -47,6 +49,14 @@ export function VaultDetailPanel({
   onToggleFullscreen,
 }: VaultDetailPanelProps) {
   const [isPdfPreviewOpen, setIsPdfPreviewOpen] = React.useState(false);
+  const openUrl = currentItem ? resolveItemOpenUrl(currentItem) : undefined;
+  const openOriginal = () => {
+    if (!openUrl) {
+      return;
+    }
+
+    window.open(openUrl, '_blank', 'noopener,noreferrer');
+  };
 
   if (!currentItem) {
     return null;
@@ -60,16 +70,17 @@ export function VaultDetailPanel({
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
       className={cn(
-        'app-scrollbar bg-white shrink-0 border-t lg:border-t-0 border-neutral-200/85 p-6 flex flex-col overflow-y-auto',
+        'app-scrollbar bg-white shrink-0 border-t lg:border-t-0 border-neutral-200/85 flex flex-col overflow-y-auto',
+        isMobile ? 'p-4' : 'p-6',
         isFullscreen ? 'w-full flex-1' : 'w-full lg:w-96'
       )}
     >
-      <div className="space-y-6 text-left select-none">
+      <div className={cn('text-left select-none', isMobile ? 'space-y-5' : 'space-y-6')}>
         <div>
           <div className="mb-2 border-b border-neutral-100 pb-2">
-            <div className="flex items-start justify-between gap-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
               <span className="text-[10px] font-extrabold uppercase font-mono tracking-widest text-[#52525b]">SYNTHESIS SHEET</span>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 self-start">
                 <button
                   onClick={onToggleFullscreen}
                   className="inline-flex h-8 items-center justify-center rounded-lg border border-neutral-200 px-2 text-neutral-600 transition hover:border-neutral-300 hover:text-neutral-950"
@@ -133,6 +144,17 @@ export function VaultDetailPanel({
                 >
                   <RefreshCw className="w-3 h-3" />
                   <span>Retry</span>
+                </button>
+              )}
+              {openUrl && (
+                <button
+                  type="button"
+                  onClick={openOriginal}
+                  className="inline-flex items-center gap-1 rounded-full border border-neutral-200 bg-white px-2.5 py-1 text-[10px] font-bold font-mono text-neutral-700 transition hover:border-neutral-300 hover:text-neutral-950"
+                  title="Open original item"
+                >
+                  <ArrowUpRight className="h-3 w-3" />
+                  <span>Open</span>
                 </button>
               )}
             </div>
@@ -227,12 +249,17 @@ export function VaultDetailPanel({
                   )}
 
                   {previewPortal.kind === 'external' && (
-                    <div className="relative h-full w-full">
-                      <img
-                        src={previewPortal.thumbnailUrl || currentItem.previewMetadata?.thumbnailUrl || currentItem.imageUrl || ''}
+                    <button
+                      type="button"
+                      onClick={previewPortal.openUrl ? openOriginal : undefined}
+                      disabled={!previewPortal.openUrl}
+                      className="relative h-full w-full text-left disabled:cursor-default"
+                    >
+                      <PreviewImage
+                        src={previewPortal.thumbnailUrl || currentItem.previewMetadata?.thumbnailUrl || currentItem.imageUrl}
                         alt={previewPortal.alt}
                         className="h-full w-full object-cover"
-                        referrerPolicy="no-referrer"
+                        fallbackClassName="h-full w-full bg-neutral-950"
                       />
                       <div className="absolute inset-0 flex items-center justify-center bg-neutral-950/35">
                         <div className="flex items-center gap-2 rounded-full bg-white/92 px-3 py-1.5 text-[11px] font-semibold text-neutral-900 shadow-sm">
@@ -240,7 +267,7 @@ export function VaultDetailPanel({
                           <span>{previewPortal.label}</span>
                         </div>
                       </div>
-                    </div>
+                    </button>
                   )}
 
                   {previewPortal.kind === 'placeholder' && (
@@ -261,13 +288,13 @@ export function VaultDetailPanel({
               {previewPortal.kind === 'pdf-file' ? (
                 <div className="space-y-2">
                   <div className="rounded-lg border border-neutral-200 shadow-sm bg-white overflow-hidden">
-                    <object data={`${previewPortal.src}#toolbar=0&navpanes=0&scrollbar=1`} type="application/pdf" className="w-full h-[28rem] bg-neutral-50">
-                      <iframe src={`${previewPortal.src}#toolbar=0&navpanes=0&scrollbar=1`} className="w-full h-[28rem] bg-white" title="PDF Document Viewer" />
+                    <object data={`${previewPortal.src}#toolbar=0&navpanes=0&scrollbar=1`} type="application/pdf" className="h-[22rem] w-full bg-neutral-50 sm:h-[28rem]">
+                      <iframe src={`${previewPortal.src}#toolbar=0&navpanes=0&scrollbar=1`} className="h-[22rem] w-full bg-white sm:h-[28rem]" title="PDF Document Viewer" />
                     </object>
                   </div>
-                  <div className="flex justify-between items-center pt-1 border-t border-neutral-100">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-neutral-100 pt-1">
                     <span className="text-[9px] text-neutral-400 font-mono">Secure PDF Reader</span>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
                       <button
                         type="button"
                         onClick={() => setIsPdfPreviewOpen(true)}
@@ -288,11 +315,11 @@ export function VaultDetailPanel({
               ) : previewPortal.kind === 'card' ? (
                 <div className="space-y-3 rounded-lg border border-neutral-200 bg-white p-3">
                   {previewPortal.thumbnailUrl ? (
-                    <img
+                    <PreviewImage
                       src={previewPortal.thumbnailUrl}
                       alt={previewPortal.title || currentItem.title}
                       className="h-44 w-full rounded-lg object-cover"
-                      referrerPolicy="no-referrer"
+                      fallbackClassName="hidden"
                     />
                   ) : null}
                   <div className="space-y-1">
@@ -346,11 +373,11 @@ export function VaultDetailPanel({
             <div className="space-y-2">
               {previewPortal.kind === 'card' && previewPortal.thumbnailUrl && (
                 <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
-                  <img
+                  <PreviewImage
                     src={previewPortal.thumbnailUrl}
                     alt={previewPortal.title || currentItem.title}
                     className="h-52 w-full object-cover"
-                    referrerPolicy="no-referrer"
+                    fallbackClassName="hidden"
                   />
                 </div>
               )}
@@ -377,11 +404,11 @@ export function VaultDetailPanel({
             <div className="space-y-2">
               {previewPortal.kind === 'card' && previewPortal.thumbnailUrl && (
                 <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
-                  <img
+                  <PreviewImage
                     src={previewPortal.thumbnailUrl}
                     alt={previewPortal.title || currentItem.title}
                     className="h-52 w-full object-cover"
-                    referrerPolicy="no-referrer"
+                    fallbackClassName="hidden"
                   />
                 </div>
               )}
@@ -422,7 +449,7 @@ export function VaultDetailPanel({
                       className="w-full max-h-72 object-contain bg-neutral-50"
                     />
                   </div>
-                  <div className="flex justify-between items-center pt-1 border-t border-neutral-100">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-neutral-100 pt-1">
                     <span className="text-[9px] text-neutral-400 font-mono">Private image capture</span>
                     <a
                       href={previewPortal.src}
@@ -537,5 +564,34 @@ export function VaultDetailPanel({
         </div>
       )}
     </motion.div>
+  );
+}
+
+function PreviewImage({
+  src,
+  alt,
+  className,
+  fallbackClassName,
+}: {
+  src?: string;
+  alt: string;
+  className?: string;
+  fallbackClassName?: string;
+}) {
+  const [failedSrc, setFailedSrc] = React.useState<string | null>(null);
+  const isAvailable = !!src && failedSrc !== src;
+
+  if (!isAvailable) {
+    return fallbackClassName ? <div className={fallbackClassName} /> : null;
+  }
+
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className={className}
+      referrerPolicy="no-referrer"
+      onError={() => setFailedSrc(src)}
+    />
   );
 }

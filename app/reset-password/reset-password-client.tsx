@@ -29,7 +29,7 @@ function getResetLinkFingerprint() {
   return `${window.location.pathname}${search}${hash}`;
 }
 
-async function claimAuthLink(fingerprint: string, linkType: 'confirmation' | 'recovery') {
+async function markAuthLinkConsumed(fingerprint: string, linkType: 'confirmation' | 'recovery') {
   const response = await fetch('/api/claim-auth-link', {
     method: 'POST',
     headers: {
@@ -42,11 +42,33 @@ async function claimAuthLink(fingerprint: string, linkType: 'confirmation' | 're
   });
 
   if (!response.ok) {
-    throw new Error('Unable to validate auth link right now.');
+    return false;
   }
 
-  const data = await response.json();
-  return Boolean(data.claimed);
+  return true;
+}
+
+async function ensureRecoverySession(supabase: ReturnType<typeof createClient>) {
+  const hashParams = new URLSearchParams(window.location.hash.slice(1));
+  const accessToken = hashParams.get('access_token');
+  const refreshToken = hashParams.get('refresh_token');
+
+  if (accessToken && refreshToken) {
+    const { error } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+
+    if (error) {
+      throw error;
+    }
+  }
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  return session;
 }
 
 export function ResetPasswordClient({ entryMode = 'auto' }: ResetPasswordClientProps) {
@@ -86,6 +108,18 @@ export function ResetPasswordClient({ entryMode = 'auto' }: ResetPasswordClientP
       }
 
       if (hasRecoveryHashSession) {
+        try {
+          const session = await ensureRecoverySession(supabase);
+          if (session) {
+            setError(null);
+            setMode('update');
+            setIsRecoveryFlow(true);
+            return;
+          }
+        } catch (sessionError) {
+          console.error(sessionError);
+        }
+
         setError(null);
         setMode('redeem');
         setIsRecoveryFlow(true);
@@ -212,6 +246,12 @@ export function ResetPasswordClient({ entryMode = 'auto' }: ResetPasswordClientP
           throw new Error(data.error || 'Unable to update password.');
         }
       } else {
+        const session = await ensureRecoverySession(supabase);
+
+        if (!session) {
+          throw new Error('Your reset session is missing or expired. Open the latest reset email again and retry.');
+        }
+
         const { error: updateError } = await supabase.auth.updateUser({
           password,
         });
@@ -257,15 +297,6 @@ export function ResetPasswordClient({ entryMode = 'auto' }: ResetPasswordClientP
       const code = search.get('code');
       const hashType = hashParams.get('type');
       const hasRecoveryHashSession = hashType === 'recovery' && !!hashParams.get('access_token');
-      const linkFingerprint = getResetLinkFingerprint();
-
-      const claimed = await claimAuthLink(linkFingerprint, 'recovery');
-      if (!claimed) {
-        setMode('request');
-        setIsRecoveryFlow(false);
-        setError('This reset link has expired. Request a new one to continue.');
-        return;
-      }
 
       if (tokenHash && type) {
         const { error: verifyError } = await supabase.auth.verifyOtp({
@@ -293,6 +324,20 @@ export function ResetPasswordClient({ entryMode = 'auto' }: ResetPasswordClientP
         setIsRecoveryFlow(false);
         setError('This reset link has expired. Request a new one to continue.');
         return;
+      }
+
+      const session = await ensureRecoverySession(supabase);
+
+      if (!session) {
+        setMode('request');
+        setIsRecoveryFlow(false);
+        setError('This reset link could not start a secure recovery session. Open the latest reset email and try again.');
+        return;
+      }
+
+      const linkFingerprint = getResetLinkFingerprint();
+      if (linkFingerprint) {
+        void markAuthLinkConsumed(linkFingerprint, 'recovery');
       }
 
       setMode('update');

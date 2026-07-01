@@ -1,4 +1,6 @@
 import { type KnowledgeItem } from '@/lib/db';
+import { inferPreviewFromUrl } from '@/lib/vault/preview-inference';
+import { fetchSafeRemote } from '@/lib/network/safe-remote-fetch';
 
 type UploadedFileData = {
   mimeType?: string;
@@ -20,11 +22,8 @@ export type ExtractedRemoteSourceData = {
 };
 
 const MAX_EXTRACTED_TEXT_LENGTH = 12000;
-
-const DIRECT_VIDEO_EXTENSIONS = ['.mp4', '.webm', '.ogg', '.mov', '.m4v'];
-const DIRECT_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.avif', '.bmp', '.svg'];
-const DIRECT_AUDIO_EXTENSIONS = ['.mp3', '.wav', '.ogg', '.m4a', '.aac', '.webm'];
-const DIRECT_PDF_EXTENSIONS = ['.pdf'];
+const MAX_SCHEMA_OBJECTS = 12;
+const MAX_TEXT_BLOCKS = 18;
 
 export async function extractRemoteSourceData(
   url: string,
@@ -50,16 +49,7 @@ export async function extractRemoteSourceData(
       };
     }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 MemoraBot/1.0',
-      },
-      cache: 'no-store',
-    });
-    clearTimeout(timeout);
+    const response = await fetchSafeRemote(url, { timeoutMs: 5000 });
 
     if (!response.ok) {
       return {
@@ -85,40 +75,67 @@ export async function extractRemoteSourceData(
     }
 
     const html = await response.text();
+    const schema = extractPrimarySchemaData(html, url);
     const canonicalUrl = resolvePreviewUrl(
       url,
       findMetaContent(html, ['property', 'og:url'])
       || findLinkHref(html, 'canonical')
+      || schema.canonicalUrl
     ) || parsedUrl.toString();
     const title =
       findMetaContent(html, ['property', 'og:title'])
       || findMetaContent(html, ['name', 'og:title'])
       || findMetaContent(html, ['name', 'twitter:title'])
       || findMetaContent(html, ['property', 'twitter:title'])
+      || schema.title
       || extractHtmlTag(html, 'title');
     const description =
       findMetaContent(html, ['property', 'og:description'])
       || findMetaContent(html, ['name', 'og:description'])
       || findMetaContent(html, ['name', 'twitter:description'])
       || findMetaContent(html, ['property', 'twitter:description'])
-      || findMetaContent(html, ['name', 'description']);
+      || findMetaContent(html, ['name', 'description'])
+      || schema.description;
     const authorName =
       findMetaContent(html, ['name', 'author'])
       || findMetaContent(html, ['property', 'article:author'])
       || findMetaContent(html, ['property', 'og:article:author'])
-      || findMetaContent(html, ['name', 'twitter:creator']);
+      || findMetaContent(html, ['name', 'twitter:creator'])
+      || schema.authorName;
     const thumbnailUrl = resolvePreviewUrl(
       url,
-      findMetaContent(html, ['property', 'og:image'])
-      || findMetaContent(html, ['property', 'og:image:secure_url'])
-      || findMetaContent(html, ['name', 'og:image'])
-      || findMetaContent(html, ['name', 'twitter:image'])
-      || findMetaContent(html, ['property', 'twitter:image'])
-      || findMetaContent(html, ['property', 'twitter:image:src'])
-      || findMetaContent(html, ['itemprop', 'image'])
+      pickBestThumbnailCandidate(url, [
+        schema.thumbnailUrl,
+        findMetaContent(html, ['property', 'og:image']),
+        findMetaContent(html, ['property', 'og:image:secure_url']),
+        findMetaContent(html, ['name', 'og:image']),
+        findMetaContent(html, ['name', 'twitter:image']),
+        findMetaContent(html, ['property', 'twitter:image']),
+        findMetaContent(html, ['property', 'twitter:image:src']),
+        findMetaContent(html, ['itemprop', 'image']),
+      ])
+    );
+    const embedUrl = resolvePreviewUrl(
+      url,
+      schema.embedUrl
+      || findMetaContent(html, ['property', 'og:video:url'])
+      || findMetaContent(html, ['property', 'og:video:secure_url'])
+      || findMetaContent(html, ['property', 'og:video'])
+      || findMetaContent(html, ['name', 'twitter:player'])
+      || findMetaContent(html, ['itemprop', 'embedUrl'])
+      || findMetaContent(html, ['itemprop', 'contentUrl'])
     );
     const siteName = findMetaContent(html, ['property', 'og:site_name']);
-    const visibleText = stripHtml(html).slice(0, MAX_EXTRACTED_TEXT_LENGTH);
+    const visibleText = extractMeaningfulText(html, {
+      fallbackDescription: description,
+      fallbackTitle: title,
+      hostname: parsedUrl.hostname,
+    }).slice(0, MAX_EXTRACTED_TEXT_LENGTH);
+    const mediaKind =
+      schema.mediaKind
+      || inferMediaKindFromEmbedUrl(embedUrl)
+      || inferredPreview.mediaKind
+      || inferMediaKindFromItemType(itemType);
 
     return {
       title: title || undefined,
@@ -128,148 +145,19 @@ export async function extractRemoteSourceData(
       authorName: authorName || undefined,
       canonicalUrl,
       previewUrl: canonicalUrl,
-      embedUrl: inferredPreview.embedUrl,
-      mediaKind: inferredPreview.mediaKind || inferMediaKindFromItemType(itemType),
-      extractedText: visibleText || undefined,
+      embedUrl: embedUrl || inferredPreview.embedUrl,
+      mediaKind,
+      extractedText: visibleText || buildMetadataSummaryText({
+        title,
+        description,
+        authorName,
+        provider: siteName || detectProviderFromHostname(parsedUrl.hostname, itemType),
+        canonicalUrl,
+        mediaKind,
+      }),
     };
   } catch {
     return null;
-  }
-}
-
-export function inferPreviewFromUrl(url: string) {
-  try {
-    const parsedUrl = new URL(url);
-    const hostname = parsedUrl.hostname.toLowerCase();
-    const pathname = parsedUrl.pathname.toLowerCase();
-    const pathnameSegments = parsedUrl.pathname.split('/').filter(Boolean);
-
-    if (DIRECT_PDF_EXTENSIONS.some((extension) => pathname.endsWith(extension))) {
-      return {
-        mediaKind: 'pdf' as const,
-        previewUrl: parsedUrl.toString(),
-        embedUrl: parsedUrl.toString(),
-        thumbnailUrl: undefined,
-      };
-    }
-
-    if (DIRECT_IMAGE_EXTENSIONS.some((extension) => pathname.endsWith(extension))) {
-      return {
-        mediaKind: 'image' as const,
-        previewUrl: parsedUrl.toString(),
-        embedUrl: undefined,
-        thumbnailUrl: parsedUrl.toString(),
-      };
-    }
-
-    if (DIRECT_AUDIO_EXTENSIONS.some((extension) => pathname.endsWith(extension))) {
-      return {
-        mediaKind: 'audio' as const,
-        previewUrl: parsedUrl.toString(),
-        embedUrl: undefined,
-        thumbnailUrl: undefined,
-      };
-    }
-
-    if (DIRECT_VIDEO_EXTENSIONS.some((extension) => pathname.endsWith(extension))) {
-      return {
-        mediaKind: 'video' as const,
-        previewUrl: parsedUrl.toString(),
-        embedUrl: undefined,
-        thumbnailUrl: undefined,
-      };
-    }
-
-    if (hostname.includes('youtu.be')) {
-      const videoId = pathnameSegments[0];
-      return {
-        mediaKind: 'video' as const,
-        previewUrl: parsedUrl.toString(),
-        embedUrl: videoId ? `https://www.youtube-nocookie.com/embed/${videoId}` : undefined,
-        thumbnailUrl: videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : undefined,
-      };
-    }
-
-    if (hostname.includes('youtube.com')) {
-      const videoId =
-        parsedUrl.pathname === '/watch'
-          ? parsedUrl.searchParams.get('v')
-          : pathnameSegments[1];
-      return {
-        mediaKind: 'video' as const,
-        previewUrl: parsedUrl.toString(),
-        embedUrl: videoId ? `https://www.youtube-nocookie.com/embed/${videoId}` : undefined,
-        thumbnailUrl: videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : undefined,
-      };
-    }
-
-    if (hostname.includes('vimeo.com')) {
-      const videoId = pathnameSegments.find((segment) => /^\d+$/.test(segment));
-      return {
-        mediaKind: 'video' as const,
-        previewUrl: parsedUrl.toString(),
-        embedUrl: videoId ? `https://player.vimeo.com/video/${videoId}` : undefined,
-        thumbnailUrl: undefined,
-      };
-    }
-
-    if (hostname.includes('loom.com')) {
-      const videoId = pathnameSegments[pathnameSegments.length - 1];
-      return {
-        mediaKind: 'video' as const,
-        previewUrl: parsedUrl.toString(),
-        embedUrl: videoId ? `https://www.loom.com/embed/${videoId}` : undefined,
-        thumbnailUrl: undefined,
-      };
-    }
-
-    if (hostname === 'dai.ly' || hostname.includes('dailymotion.com')) {
-      const videoId = hostname === 'dai.ly'
-        ? pathnameSegments[0]
-        : pathnameSegments[pathnameSegments.length - 1];
-      return {
-        mediaKind: 'video' as const,
-        previewUrl: parsedUrl.toString(),
-        embedUrl: videoId ? `https://www.dailymotion.com/embed/video/${videoId}` : undefined,
-        thumbnailUrl: undefined,
-      };
-    }
-
-    if (hostname.includes('wistia.com') || hostname.includes('fast.wistia.net')) {
-      const mediaIndex = pathnameSegments.findIndex((segment) => segment === 'medias');
-      const videoId = mediaIndex >= 0 ? pathnameSegments[mediaIndex + 1] : pathnameSegments[pathnameSegments.length - 1];
-      return {
-        mediaKind: 'video' as const,
-        previewUrl: parsedUrl.toString(),
-        embedUrl: videoId ? `https://fast.wistia.net/embed/iframe/${videoId}` : undefined,
-        thumbnailUrl: undefined,
-      };
-    }
-
-    if (hostname.includes('drive.google.com')) {
-      const fileIndex = pathnameSegments.findIndex((segment) => segment === 'd');
-      const fileId = fileIndex >= 0 ? pathnameSegments[fileIndex + 1] : undefined;
-      return {
-        mediaKind: 'video' as const,
-        previewUrl: parsedUrl.toString(),
-        embedUrl: fileId ? `https://drive.google.com/file/d/${fileId}/preview` : undefined,
-        thumbnailUrl: undefined,
-      };
-    }
-
-    return {
-      mediaKind: 'unknown' as const,
-      previewUrl: parsedUrl.toString(),
-      embedUrl: undefined,
-      thumbnailUrl: undefined,
-    };
-  } catch {
-    return {
-      mediaKind: 'unknown' as const,
-      previewUrl: url,
-      embedUrl: undefined,
-      thumbnailUrl: undefined,
-    };
   }
 }
 
@@ -320,6 +208,24 @@ function inferMediaKindFromContentType(contentType: string) {
   return undefined;
 }
 
+function inferMediaKindFromEmbedUrl(embedUrl: string) {
+  if (!embedUrl) {
+    return undefined;
+  }
+
+  const normalized = embedUrl.toLowerCase();
+  if (
+    normalized.includes('/embed/')
+    || normalized.includes('player')
+    || normalized.endsWith('.m3u8')
+    || normalized.endsWith('.mp4')
+  ) {
+    return 'video' as const;
+  }
+
+  return undefined;
+}
+
 function detectProviderFromHostname(hostname: string, itemType?: KnowledgeItem['type']) {
   const normalized = hostname.replace(/^www\./, '').toLowerCase();
   if (normalized === 'x.com' || normalized === 'twitter.com') return 'X';
@@ -333,6 +239,322 @@ function detectProviderFromHostname(hostname: string, itemType?: KnowledgeItem['
   if (normalized.includes('drive.google.com')) return 'Google Drive';
   if (itemType === 'Social Links') return 'Social Feed';
   return normalized;
+}
+
+function extractPrimarySchemaData(html: string, baseUrl: string) {
+  const objects = extractJsonLdObjects(html);
+  const candidates = objects
+    .map((entry) => normalizeSchemaEntry(entry))
+    .filter((entry): entry is ReturnType<typeof normalizeSchemaEntry> & NonNullable<unknown> => Boolean(entry));
+
+  const scored = candidates
+    .map((entry) => ({
+      entry,
+      score: scoreSchemaEntry(entry),
+    }))
+    .sort((left, right) => right.score - left.score);
+
+  const best = scored[0]?.entry;
+
+  return {
+    title: best?.title || '',
+    description: best?.description || '',
+    authorName: best?.authorName || '',
+    thumbnailUrl: resolvePreviewUrl(baseUrl, best?.thumbnailUrl || ''),
+    embedUrl: resolvePreviewUrl(baseUrl, best?.embedUrl || ''),
+    canonicalUrl: resolvePreviewUrl(baseUrl, best?.canonicalUrl || ''),
+    mediaKind: best?.mediaKind,
+  };
+}
+
+function extractJsonLdObjects(html: string) {
+  const matches = [...html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)];
+  const results: unknown[] = [];
+
+  for (const match of matches.slice(0, MAX_SCHEMA_OBJECTS)) {
+    const raw = match[1]?.trim();
+    if (!raw) {
+      continue;
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      flattenJsonLd(parsed, results);
+    } catch {
+      continue;
+    }
+  }
+
+  return results;
+}
+
+function flattenJsonLd(value: unknown, results: unknown[]) {
+  if (!value || results.length >= MAX_SCHEMA_OBJECTS) {
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      flattenJsonLd(entry, results);
+    }
+    return;
+  }
+
+  if (typeof value !== 'object') {
+    return;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  if (Array.isArray(record['@graph'])) {
+    flattenJsonLd(record['@graph'], results);
+  }
+
+  results.push(record);
+}
+
+function normalizeSchemaEntry(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const typeValues = normalizeSchemaType(record['@type']);
+  const primaryType = typeValues[0] || '';
+
+  const title = readSchemaString(record.name) || readSchemaString(record.headline);
+  const description = readSchemaString(record.description);
+  const authorName = readSchemaPerson(record.author) || readSchemaPerson(record.creator);
+  const thumbnailUrl = readSchemaImage(record.thumbnailUrl) || readSchemaImage(record.image);
+  const embedUrl = readSchemaString(record.embedUrl) || readSchemaString(record.contentUrl);
+  const canonicalUrl = readSchemaString(record.mainEntityOfPage) || readSchemaString(record.url);
+  const mediaKind = inferMediaKindFromSchemaType(primaryType, embedUrl);
+
+  if (!title && !description && !thumbnailUrl && !embedUrl) {
+    return null;
+  }
+
+  return {
+    primaryType,
+    title,
+    description,
+    authorName,
+    thumbnailUrl,
+    embedUrl,
+    canonicalUrl,
+    mediaKind,
+  };
+}
+
+function normalizeSchemaType(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry).trim()).filter(Boolean);
+  }
+
+  if (typeof value === 'string') {
+    return [value.trim()];
+  }
+
+  return [];
+}
+
+function readSchemaString(value: unknown): string {
+  if (typeof value === 'string') {
+    return normalizeExtractedText(value);
+  }
+
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    const candidate = typeof record.url === 'string' ? record.url : typeof record['@id'] === 'string' ? record['@id'] : '';
+    return normalizeExtractedText(candidate);
+  }
+
+  return '';
+}
+
+function readSchemaPerson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value.map((entry) => readSchemaPerson(entry)).find(Boolean) || '';
+  }
+
+  if (typeof value === 'string') {
+    return normalizeExtractedText(value);
+  }
+
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    return normalizeExtractedText(typeof record.name === 'string' ? record.name : '');
+  }
+
+  return '';
+}
+
+function readSchemaImage(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value.map((entry) => readSchemaImage(entry)).find(Boolean) || '';
+  }
+
+  if (typeof value === 'string') {
+    return normalizeExtractedText(value);
+  }
+
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    return normalizeExtractedText(
+      typeof record.url === 'string'
+        ? record.url
+        : typeof record.contentUrl === 'string'
+          ? record.contentUrl
+          : ''
+    );
+  }
+
+  return '';
+}
+
+function inferMediaKindFromSchemaType(schemaType: string, embedUrl: string) {
+  const normalized = schemaType.toLowerCase();
+  if (!normalized && !embedUrl) {
+    return undefined;
+  }
+
+  if (normalized.includes('video') || normalized.includes('episode') || normalized.includes('movie')) {
+    return 'video' as const;
+  }
+  if (normalized.includes('article') || normalized.includes('posting') || normalized.includes('blog')) {
+    return 'article' as const;
+  }
+  if (normalized.includes('image')) {
+    return 'image' as const;
+  }
+
+  return inferMediaKindFromEmbedUrl(embedUrl);
+}
+
+function scoreSchemaEntry(entry: NonNullable<ReturnType<typeof normalizeSchemaEntry>>) {
+  let score = 0;
+  const type = entry.primaryType.toLowerCase();
+
+  if (type.includes('video')) score += 10;
+  if (type.includes('episode')) score += 9;
+  if (type.includes('movie')) score += 9;
+  if (type.includes('socialmediaposting')) score += 8;
+  if (type.includes('article')) score += 7;
+  if (entry.embedUrl) score += 8;
+  if (entry.thumbnailUrl) score += 4;
+  if (entry.title) score += 4;
+  if (entry.description) score += 3;
+
+  return score;
+}
+
+function pickBestThumbnailCandidate(baseUrl: string, candidates: Array<string | undefined>) {
+  for (const candidate of candidates) {
+    const resolved = resolvePreviewUrl(baseUrl, candidate || '');
+    if (!resolved) {
+      continue;
+    }
+
+    if (looksLikeAvatarImage(resolved)) {
+      continue;
+    }
+
+    return resolved;
+  }
+
+  return '';
+}
+
+function looksLikeAvatarImage(url: string) {
+  const normalized = url.toLowerCase();
+  return normalized.includes('profile_images')
+    || normalized.includes('/avatar')
+    || normalized.includes('avatar_')
+    || normalized.includes('/profile/')
+    || normalized.includes('/pfp/');
+}
+
+function extractMeaningfulText(
+  html: string,
+  options: {
+    fallbackTitle: string;
+    fallbackDescription: string;
+    hostname: string;
+  }
+) {
+  const preferredSections = [
+    extractSectionText(html, 'article'),
+    extractSectionText(html, 'main'),
+  ].filter(Boolean);
+
+  const paragraphMatches = [...html.matchAll(/<(p|h1|h2|h3|li|blockquote)[^>]*>([\s\S]*?)<\/\1>/gi)]
+    .map((match) => normalizeExtractedText(match[2] || ''))
+    .filter(Boolean)
+    .filter((entry) => entry.length > 30)
+    .slice(0, MAX_TEXT_BLOCKS);
+
+  const textBlocks = [...preferredSections, ...paragraphMatches];
+  const combined = dedupeTextBlocks(textBlocks).join('\n\n').trim();
+
+  if (combined) {
+    return combined;
+  }
+
+  if (options.hostname.includes('x.com') || options.hostname.includes('twitter.com')) {
+    return normalizeExtractedText([options.fallbackTitle, options.fallbackDescription].filter(Boolean).join(' '));
+  }
+
+  const stripped = stripHtml(html);
+  if (stripped) {
+    return stripped;
+  }
+
+  return buildMetadataSummaryText({
+    title: options.fallbackTitle,
+    description: options.fallbackDescription,
+  });
+}
+
+function extractSectionText(html: string, tagName: string) {
+  const match = html.match(new RegExp(`<${tagName}[^>]*>([\\s\\S]*?)<\\/${tagName}>`, 'i'));
+  return normalizeExtractedText(match?.[1] || '');
+}
+
+function dedupeTextBlocks(blocks: string[]) {
+  const seen = new Set<string>();
+  const results: string[] = [];
+
+  for (const block of blocks) {
+    const normalized = block.toLowerCase();
+    if (seen.has(normalized)) {
+      continue;
+    }
+
+    seen.add(normalized);
+    results.push(block);
+  }
+
+  return results;
+}
+
+function buildMetadataSummaryText(input: {
+  title?: string;
+  description?: string;
+  authorName?: string;
+  provider?: string;
+  canonicalUrl?: string;
+  mediaKind?: string;
+}) {
+  return [
+    input.title ? `Title: ${input.title}` : '',
+    input.description ? `Description: ${input.description}` : '',
+    input.authorName ? `Author: ${input.authorName}` : '',
+    input.provider ? `Provider: ${input.provider}` : '',
+    input.mediaKind ? `Media type: ${input.mediaKind}` : '',
+    input.canonicalUrl ? `Source URL: ${input.canonicalUrl}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 function findMetaContent(html: string, attribute: [string, string]) {

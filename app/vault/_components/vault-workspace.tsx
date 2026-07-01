@@ -1663,6 +1663,7 @@ export function VaultWorkspace({ identity, initialItems = [], initialChatSession
                   currentItem={currentItem}
                   isTrashView={currentTab === 'Trash'}
                   isFullscreen={isDetailFullscreen}
+                  isMobile={false}
                   reduceMotion={reduceMotion}
                   flippedCardId={flippedCardId}
                   voiceSpeed={voiceSpeed}
@@ -1703,6 +1704,7 @@ export function VaultWorkspace({ identity, initialItems = [], initialChatSession
                     currentItem={currentItem}
                     isTrashView={currentTab === 'Trash'}
                     isFullscreen
+                    isMobile
                     reduceMotion={reduceMotion}
                     flippedCardId={flippedCardId}
                     voiceSpeed={voiceSpeed}
@@ -1991,13 +1993,14 @@ export function VaultWorkspace({ identity, initialItems = [], initialChatSession
               initial={{ opacity: 0, scale: 0.985, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.985, y: 10 }}
-              className="relative z-10 flex h-full w-full max-w-6xl overflow-hidden border-l border-r border-neutral-200 bg-white shadow-2xl"
+              className="relative z-10 flex h-full w-full overflow-hidden bg-white shadow-2xl sm:max-w-6xl sm:border-l sm:border-r sm:border-neutral-200"
             >
               <VaultDetailPanel
                 key={`overlay-${currentItem.id}`}
                 currentItem={currentItem}
                 isTrashView={currentTab === 'Trash'}
                 isFullscreen
+                isMobile={isMobileViewport}
                 reduceMotion={reduceMotion}
                 flippedCardId={flippedCardId}
                 voiceSpeed={voiceSpeed}

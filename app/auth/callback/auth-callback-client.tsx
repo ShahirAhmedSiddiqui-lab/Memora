@@ -22,7 +22,11 @@ function getLinkFingerprint() {
   return `${window.location.pathname}${search}${hash}`;
 }
 
-async function claimAuthLink(fingerprint: string, linkType: 'confirmation' | 'recovery') {
+async function readAuthLinkClaimState(
+  fingerprint: string,
+  linkType: 'confirmation' | 'recovery',
+  mode: 'claim' | 'check' = 'claim'
+) {
   const response = await fetch('/api/claim-auth-link', {
     method: 'POST',
     headers: {
@@ -31,15 +35,16 @@ async function claimAuthLink(fingerprint: string, linkType: 'confirmation' | 're
     body: JSON.stringify({
       fingerprint,
       linkType,
+      mode,
     }),
   });
 
   if (!response.ok) {
-    throw new Error('Unable to validate auth link right now.');
+    return null;
   }
 
-  const data = await response.json();
-  return Boolean(data.claimed);
+  const data = await response.json().catch(() => null);
+  return typeof data?.claimed === 'boolean' ? data.claimed : null;
 }
 
 export function AuthCallbackClient() {
@@ -76,12 +81,6 @@ export function AuthCallbackClient() {
       const type = search.get('type');
       const linkFingerprint = getLinkFingerprint();
 
-      const claimed = await claimAuthLink(linkFingerprint, 'confirmation');
-      if (!claimed) {
-        router.replace(`/login?message=${encodeURIComponent('This confirmation link has expired. Request a new one and try again.')}`);
-        return;
-      }
-
       if (tokenHash && type) {
         const { error } = await supabase.auth.verifyOtp({
           token_hash: tokenHash,
@@ -89,12 +88,32 @@ export function AuthCallbackClient() {
         });
 
         if (error) {
+          const alreadyClaimed = linkFingerprint
+            ? await readAuthLinkClaimState(linkFingerprint, 'confirmation', 'check')
+            : null;
+
+          if (alreadyClaimed) {
+            setHasCompleted(true);
+            setMessage('Email already verified. You can now close this tab and log in from the previous tab.');
+            return;
+          }
+
           router.replace(`/login?message=${encodeURIComponent('This confirmation link has expired. Request a new one and try again.')}`);
           return;
         }
       } else if (code) {
         const { error } = await supabase.auth.exchangeCodeForSession(code);
         if (error) {
+          const alreadyClaimed = linkFingerprint
+            ? await readAuthLinkClaimState(linkFingerprint, 'confirmation', 'check')
+            : null;
+
+          if (alreadyClaimed) {
+            setHasCompleted(true);
+            setMessage('Email already verified. You can now close this tab and log in from the previous tab.');
+            return;
+          }
+
           router.replace(`/login?message=${encodeURIComponent('This confirmation link has expired. Request a new one and try again.')}`);
           return;
         }
@@ -110,6 +129,10 @@ export function AuthCallbackClient() {
       if (!session) {
         router.replace(`/login?message=${encodeURIComponent('This confirmation link has expired. Request a new one and try again.')}`);
         return;
+      }
+
+      if (linkFingerprint) {
+        void readAuthLinkClaimState(linkFingerprint, 'confirmation', 'claim');
       }
 
       await completeConfirmation(supabase);

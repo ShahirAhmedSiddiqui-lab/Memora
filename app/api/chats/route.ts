@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ApiRouteError, apiSuccess, handleApiRouteError, unauthorized } from '@/lib/api/errors';
+import { ApiRouteError, apiSuccess, handleApiRouteError } from '@/lib/api/errors';
+import { requireApiUser } from '@/lib/api/auth';
 import { logApiEvent } from '@/lib/api/logging';
 import { enforceRateLimit } from '@/lib/api/rate-limit';
 import { ensureObject, readJsonBody, readOptionalBoolean, readRequiredString, readUuid } from '@/lib/api/validation';
@@ -12,13 +13,7 @@ import { buildChatSessionTitle, getOrCreateLatestChatSession, touchChatSession }
 export async function GET() {
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return unauthorized();
-    }
+    const user = await requireApiUser(supabase);
 
     const session = await getOrCreateLatestChatSession(supabase, user.id);
     const { data, error } = await supabase
@@ -41,13 +36,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return unauthorized();
-    }
+    const user = await requireApiUser(supabase);
 
     enforceRateLimit({
       key: `chat:legacy:${user.id}`,
@@ -204,13 +193,7 @@ function readOptionalItemIds(value: unknown) {
 export async function DELETE() {
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return unauthorized();
-    }
+    const user = await requireApiUser(supabase);
 
     const { error } = await supabase.from('chat_sessions').delete().eq('user_id', user.id);
 

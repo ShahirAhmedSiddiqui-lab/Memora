@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
-import { ApiRouteError, apiSuccess, handleApiRouteError, unauthorized } from '@/lib/api/errors';
+import { ApiRouteError, apiSuccess, handleApiRouteError } from '@/lib/api/errors';
+import { requireApiUser } from '@/lib/api/auth';
 import { ensureObject, readJsonBody, readOptionalBoolean, readUuid } from '@/lib/api/validation';
 import { createClient } from '@/lib/supabase/server';
 import { mapKnowledgeItem, VAULT_BUCKET } from '@/lib/supabase/vault';
@@ -7,13 +8,7 @@ import { mapKnowledgeItem, VAULT_BUCKET } from '@/lib/supabase/vault';
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return unauthorized();
-    }
+    const user = await requireApiUser(supabase);
 
     const { id } = await params;
     const itemId = readUuid(id, 'Item id');
@@ -45,13 +40,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return unauthorized();
-    }
+    const user = await requireApiUser(supabase);
 
     const { id } = await params;
     const itemId = readUuid(id, 'Item id');
@@ -95,13 +84,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return unauthorized();
-    }
+    const user = await requireApiUser(supabase);
 
     const { id } = await params;
     const itemId = readUuid(id, 'Item id');
@@ -139,6 +122,19 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
         throw new ApiRouteError(500, 'Failed to permanently delete item', {
           code: 'delete_failed',
           cause: deleteError,
+        });
+      }
+
+      const { error: fileDeleteError } = await supabase
+        .from('vault_files')
+        .delete()
+        .eq('item_id', itemId)
+        .eq('user_id', user.id);
+
+      if (fileDeleteError) {
+        throw new ApiRouteError(500, 'Failed to remove file metadata for this item', {
+          code: 'delete_failed',
+          cause: fileDeleteError,
         });
       }
 
