@@ -2,7 +2,6 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { ArrowLeft, RefreshCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { BrandLockup } from '@/app/_components/brand-lockup';
@@ -10,6 +9,10 @@ import { PasswordInput } from '@/app/_components/password-input';
 import { broadcastAuthLinkEvent } from '@/lib/auth-link-events';
 import { queueFlashToast } from '@/lib/client/flash-toast';
 import { createClient } from '@/lib/supabase/client';
+
+type ResetPasswordClientProps = {
+  entryMode?: 'auto' | 'request' | 'update';
+};
 
 function getResetLinkFingerprint() {
   if (typeof window === 'undefined') {
@@ -46,9 +49,8 @@ async function claimAuthLink(fingerprint: string, linkType: 'confirmation' | 're
   return Boolean(data.claimed);
 }
 
-export function ResetPasswordClient() {
-  const router = useRouter();
-  const [mode, setMode] = React.useState<'request' | 'redeem' | 'update'>('request');
+export function ResetPasswordClient({ entryMode = 'auto' }: ResetPasswordClientProps) {
+  const [mode, setMode] = React.useState<'request' | 'redeem' | 'update'>(entryMode === 'update' ? 'redeem' : 'request');
   const [isRecoveryFlow, setIsRecoveryFlow] = React.useState(false);
   const [hasCompleted, setHasCompleted] = React.useState(false);
   const [isRedeemingLink, setIsRedeemingLink] = React.useState(false);
@@ -64,6 +66,7 @@ export function ResetPasswordClient() {
     const supabase = createClient();
 
     const bootstrap = async () => {
+      const shouldPreferUpdateFlow = entryMode === 'update';
       const hash = window.location.hash.toLowerCase();
       const hashParams = new URLSearchParams(window.location.hash.slice(1));
       const search = new URLSearchParams(window.location.search);
@@ -102,7 +105,7 @@ export function ResetPasswordClient() {
 
       if (existingSession) {
         setError(null);
-        setMode('update');
+        setMode(shouldPreferUpdateFlow ? 'update' : 'request');
         setIsRecoveryFlow(false);
         return;
       }
@@ -112,6 +115,12 @@ export function ResetPasswordClient() {
         setIsRecoveryFlow(false);
         setError('This reset link has expired. Request a new one to continue.');
         return;
+      }
+
+      if (shouldPreferUpdateFlow) {
+        setMode('request');
+        setIsRecoveryFlow(false);
+        setError('Open the password reset link from your email to set a new password.');
       }
     };
 
@@ -130,7 +139,7 @@ export function ResetPasswordClient() {
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [entryMode]);
 
   const requestResetEmail = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -288,7 +297,7 @@ export function ResetPasswordClient() {
 
       setMode('update');
       setIsRecoveryFlow(true);
-      window.history.replaceState({}, document.title, '/reset-password');
+      window.history.replaceState({}, document.title, '/update-password');
     } catch (redeemError) {
       console.error(redeemError);
       setMode('request');
@@ -319,13 +328,21 @@ export function ResetPasswordClient() {
               {mode === 'request' ? 'Request Reset' : 'Set New Password'}
             </p>
             <h1 className="text-3xl font-black tracking-tight text-neutral-950">
-              {hasCompleted ? 'Password updated.' : mode === 'request' ? 'Recover access to your vault.' : 'Choose a new password.'}
+              {hasCompleted
+                ? 'Password updated.'
+                : mode === 'request'
+                  ? entryMode === 'update'
+                    ? 'Open your reset link to continue.'
+                    : 'Recover access to your vault.'
+                  : 'Choose a new password.'}
             </h1>
             <p className="text-sm leading-7 text-neutral-600">
               {hasCompleted
                 ? 'Your password has been changed successfully. Close this tab and go back to the previous Memora tab to log in again with your new password.'
                 : mode === 'request'
-                ? 'Enter your email and we will send you a secure recovery link.'
+                ? entryMode === 'update'
+                  ? 'This page is for setting a new password after opening the secure recovery link from your email. If you still need a link, request one below.'
+                  : 'Enter your email and we will send you a secure recovery link.'
                 : mode === 'redeem'
                   ? 'This tab is only for securely changing your password. Continue below to open the one-time recovery session, then set your new password.'
                 : isRecoveryFlow

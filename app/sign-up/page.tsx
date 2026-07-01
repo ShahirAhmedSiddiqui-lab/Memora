@@ -2,9 +2,9 @@ import { redirect } from 'next/navigation';
 import { AuthShell } from '../_components/auth-shell';
 import { createClient } from '@/lib/supabase/server';
 import { getSafeUser } from '@/lib/supabase/auth';
-import { LoginFormClient } from './login-form-client';
+import { LoginFormClient } from '../login/login-form-client';
 
-export default async function LoginPage({
+export default async function SignUpPage({
   searchParams,
 }: {
   searchParams: Promise<{ message?: string }>;
@@ -20,12 +20,12 @@ export default async function LoginPage({
 
   return (
     <AuthShell
-      eyebrow="Account Access"
-      title="Welcome back to your private second brain."
-      description="Sign in to continue searching, saving, and organizing your vault across links, files, notes, and voice captures."
-      formTitle="Log in to Memora"
+      eyebrow="Create Account"
+      title="Start building your memory vault."
+      description="Create your Memora account to save links, PDFs, voice notes, screenshots, and AI-structured recall cards in one protected space."
+      formTitle="Create your Memora account"
     >
-      <LoginFormClient initialMessage={message} mode="login" />
+      <LoginFormClient initialMessage={message} mode="signup" />
     </AuthShell>
   );
 }

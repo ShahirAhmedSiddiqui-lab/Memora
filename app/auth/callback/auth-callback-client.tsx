@@ -56,7 +56,9 @@ export function AuthCallbackClient() {
     });
     await supabase.auth.signOut();
     setHasCompleted(true);
-    setMessage('Email confirmed successfully. This tab will close automatically if your browser allows it.');
+    setMessage(
+      'Account created successfully. You can now close this tab and log in with your credentials in the previous tab.'
+    );
 
     window.setTimeout(() => {
       window.close();
@@ -158,8 +160,14 @@ export function AuthCallbackClient() {
           return;
         }
 
-        setMessage('Email confirmed. Redirecting to login...');
-        router.replace(`/login?message=${encodeURIComponent('Email confirmed successfully. Please log in.')}`);
+        setHasCompleted(true);
+        setMessage(
+          'Account created successfully. You can now close this tab and log in with your credentials in the previous tab.'
+        );
+
+        window.setTimeout(() => {
+          window.close();
+        }, 900);
       } catch (error) {
         console.error('Auth callback error:', error);
         router.replace(`/login?message=${encodeURIComponent('We could not complete email confirmation. Please try again.')}`);
@@ -180,7 +188,7 @@ export function AuthCallbackClient() {
             {hasCompleted ? null : <RefreshCcw className="h-5 w-5 animate-spin text-neutral-500" />}
           </div>
           <h1 className="mt-6 text-2xl font-black tracking-tight text-neutral-950">
-            {hasCompleted ? 'Email confirmed.' : 'Confirming your account'}
+            {hasCompleted ? 'Account created successfully.' : 'Confirming your account'}
           </h1>
           <p className="mt-3 text-sm leading-7 text-neutral-600">{message}</p>
           {isRedeeming && !hasCompleted ? (

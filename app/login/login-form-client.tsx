@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { RefreshCcw } from 'lucide-react';
 import { toast } from 'sonner';
@@ -9,6 +10,7 @@ import { queueFlashToast } from '@/lib/client/flash-toast';
 
 type LoginFormClientProps = {
   initialMessage?: string;
+  mode?: 'login' | 'signup' | 'combined';
 };
 
 function isValidEmail(value: string) {
@@ -25,7 +27,7 @@ function normalizeAuthMessage(message: string) {
   return message;
 }
 
-export function LoginFormClient({ initialMessage }: LoginFormClientProps) {
+export function LoginFormClient({ initialMessage, mode = 'combined' }: LoginFormClientProps) {
   const router = useRouter();
   const [name, setName] = React.useState('');
   const [email, setEmail] = React.useState('');
@@ -39,7 +41,13 @@ export function LoginFormClient({ initialMessage }: LoginFormClientProps) {
 
   React.useEffect(() => {
     void router.prefetch('/vault');
+    void router.prefetch('/sign-up');
+    void router.prefetch('/forgot-password');
   }, [router]);
+
+  const isLoginOnly = mode === 'login';
+  const isSignupOnly = mode === 'signup';
+  const isCombinedMode = mode === 'combined';
 
   const showError = React.useCallback((nextMessage: string) => {
     setMessage(normalizeAuthMessage(nextMessage));
@@ -142,7 +150,7 @@ export function LoginFormClient({ initialMessage }: LoginFormClientProps) {
       setPassword('');
       setIsAwaitingEmailConfirmation(false);
       queueFlashToast({ message: 'Account created successfully.' });
-      router.replace('/vault');
+      router.replace('/onboarding');
       router.refresh();
     } catch (error) {
       console.error(error);
@@ -161,7 +169,7 @@ export function LoginFormClient({ initialMessage }: LoginFormClientProps) {
     const normalizedEmail = email.trim();
 
     if (!normalizedEmail) {
-      router.push('/reset-password');
+      router.push('/forgot-password');
       return;
     }
 
@@ -216,9 +224,15 @@ export function LoginFormClient({ initialMessage }: LoginFormClientProps) {
         className="space-y-4"
         onSubmit={(event) => {
           event.preventDefault();
+          if (isSignupOnly) {
+            void handleSignup();
+            return;
+          }
+
           void handleLogin();
         }}
       >
+        {isLoginOnly ? null : (
         <div className="space-y-2">
           <label htmlFor="name" className="text-xs font-bold uppercase tracking-[0.24em] text-neutral-400">
             Full Name
@@ -236,6 +250,7 @@ export function LoginFormClient({ initialMessage }: LoginFormClientProps) {
             className="w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-900 outline-none transition focus:border-neutral-900 focus:bg-white"
           />
         </div>
+        )}
 
         <div className="space-y-2">
           <label htmlFor="email" className="text-xs font-bold uppercase tracking-[0.24em] text-neutral-400">
@@ -277,35 +292,76 @@ export function LoginFormClient({ initialMessage }: LoginFormClientProps) {
           />
         </div>
 
-        <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={() => void handleForgotPassword()}
-            disabled={isSendingReset || isAwaitingEmailConfirmation}
-            className="inline-flex items-center gap-2 text-xs font-semibold text-neutral-500 transition hover:text-neutral-950 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isSendingReset ? <RefreshCcw className="h-3.5 w-3.5 animate-spin" /> : null}
-            Forgot your password?
-          </button>
-        </div>
+        {!isSignupOnly ? (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => void handleForgotPassword()}
+              disabled={isSendingReset || isAwaitingEmailConfirmation}
+              className="inline-flex items-center gap-2 text-xs font-semibold text-neutral-500 transition hover:text-neutral-950 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isSendingReset ? <RefreshCcw className="h-3.5 w-3.5 animate-spin" /> : null}
+              Forgot your password?
+            </button>
+          </div>
+        ) : null}
 
-        <div className="grid gap-3 pt-2 sm:grid-cols-2">
-          <button
-            type="submit"
-            disabled={isLoggingIn || isSigningUp || isSendingReset}
-            className="rounded-2xl bg-neutral-950 px-4 py-3 text-sm font-bold text-white transition hover:bg-neutral-800 disabled:opacity-50"
-          >
-            {isLoggingIn ? 'Logging in...' : 'Log In'}
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleSignup()}
-            disabled={isLoggingIn || isSigningUp || isSendingReset}
-            className="rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm font-bold text-neutral-900 transition hover:border-neutral-900 disabled:opacity-50"
-          >
-            {isSigningUp ? 'Creating account...' : 'Sign Up'}
-          </button>
-        </div>
+        {isLoginOnly ? (
+          <div className="space-y-3 pt-2">
+            <button
+              type="submit"
+              disabled={isLoggingIn || isSigningUp || isSendingReset}
+              className="w-full rounded-2xl bg-neutral-950 px-4 py-3 text-sm font-bold text-white transition hover:bg-neutral-800 disabled:opacity-50"
+            >
+              {isLoggingIn ? 'Logging in...' : 'Log In'}
+            </button>
+            <p className="text-center text-xs text-neutral-500">
+              New to Memora?{' '}
+              <Link href="/sign-up" className="font-semibold text-neutral-900 hover:underline">
+                Create an account
+              </Link>
+            </p>
+          </div>
+        ) : null}
+
+        {isSignupOnly ? (
+          <div className="space-y-3 pt-2">
+            <button
+              type="button"
+              onClick={() => void handleSignup()}
+              disabled={isLoggingIn || isSigningUp || isSendingReset}
+              className="w-full rounded-2xl bg-neutral-950 px-4 py-3 text-sm font-bold text-white transition hover:bg-neutral-800 disabled:opacity-50"
+            >
+              {isSigningUp ? 'Creating account...' : 'Create account'}
+            </button>
+            <p className="text-center text-xs text-neutral-500">
+              Already have an account?{' '}
+              <Link href="/login" className="font-semibold text-neutral-900 hover:underline">
+                Log in
+              </Link>
+            </p>
+          </div>
+        ) : null}
+
+        {isCombinedMode ? (
+          <div className="grid gap-3 pt-2 sm:grid-cols-2">
+            <button
+              type="submit"
+              disabled={isLoggingIn || isSigningUp || isSendingReset}
+              className="rounded-2xl bg-neutral-950 px-4 py-3 text-sm font-bold text-white transition hover:bg-neutral-800 disabled:opacity-50"
+            >
+              {isLoggingIn ? 'Logging in...' : 'Log In'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleSignup()}
+              disabled={isLoggingIn || isSigningUp || isSendingReset}
+              className="rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm font-bold text-neutral-900 transition hover:border-neutral-900 disabled:opacity-50"
+            >
+              {isSigningUp ? 'Creating account...' : 'Sign Up'}
+            </button>
+          </div>
+        ) : null}
       </form>
     </div>
   );

@@ -4,7 +4,11 @@ import { NextResponse, type NextRequest } from 'next/server';
 function isPublicPath(pathname: string) {
   return (
     pathname === '/' ||
+    pathname.startsWith('/sign-up') ||
     pathname.startsWith('/login') ||
+    pathname.startsWith('/forgot-password') ||
+    pathname.startsWith('/update-password') ||
+    pathname.startsWith('/reset-password') ||
     pathname.startsWith('/auth') ||
     pathname.startsWith('/_next') ||
     pathname === '/favicon.ico' ||
@@ -51,7 +55,7 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(redirectUrl);
   }
 
-  if (user && pathname === '/login') {
+  if (user && (pathname === '/login' || pathname === '/sign-up')) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = '/vault';
     redirectUrl.search = '';

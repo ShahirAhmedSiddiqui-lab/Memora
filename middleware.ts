@@ -2,7 +2,10 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 function isPublicPath(pathname: string) {
   return pathname === '/'
+    || pathname.startsWith('/sign-up')
     || pathname.startsWith('/login')
+    || pathname.startsWith('/forgot-password')
+    || pathname.startsWith('/update-password')
     || pathname.startsWith('/reset-password')
     || pathname.startsWith('/auth')
     || pathname.startsWith('/api')

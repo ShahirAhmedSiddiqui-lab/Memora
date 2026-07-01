@@ -212,7 +212,7 @@ export function MarketingLanding() {
           </motion.button>
           <motion.button
             onClick={() => {
-              window.location.assign('/login');
+              window.location.assign('/sign-up');
             }}
             whileHover={{ y: -2 }}
             whileTap={{ scale: 0.985 }}
@@ -255,7 +255,7 @@ export function MarketingLanding() {
         >
           <motion.button
             onClick={() => {
-              window.location.assign('/login');
+              window.location.assign('/sign-up');
             }}
             whileHover={{ y: -2 }}
             whileTap={{ scale: 0.985 }}
@@ -266,7 +266,7 @@ export function MarketingLanding() {
           </motion.button>
           <motion.button
             onClick={() => {
-              window.location.assign('/login');
+              window.location.assign('/sign-up');
             }}
             whileHover={{ y: -1 }}
             whileTap={{ scale: 0.99 }}
